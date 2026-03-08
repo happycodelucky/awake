@@ -1,4 +1,8 @@
-    import Foundation
+// MARK: - AppUpdater
+// Wraps Sparkle's SPUUpdater and SPUUserDriver into observable state that
+// MenuContentView can display as an UpdateNoticeCard.
+
+import Foundation
 import Sparkle
 
 @MainActor
@@ -81,6 +85,9 @@ public final class AppUpdater: NSObject, ObservableObject {
     notice = nil
   }
 
+  // AGENT: Sparkle is only started when both SUFeedURL and SUPublicEDKey are
+  // present in Info.plist. This lets development builds skip update checks
+  // without needing a separate build configuration or feature flag.
   /// Starts Sparkle if the bundle contains the required feed configuration.
   private func configureUpdaterIfPossible() {
     guard hasRequiredConfiguration else { return }

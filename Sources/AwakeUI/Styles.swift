@@ -1,6 +1,10 @@
+// MARK: - Styles
+// Custom ButtonStyle implementations for presets, footer, and update card actions.
+
 import SwiftUI
 
-/// Styles the footer button used for the quit action.
+/// Styles the footer button with `.regularMaterial` fill, a subtle border,
+/// and a press-state scale animation. Used for the Quit action.
 struct FooterButtonStyle: ButtonStyle {
   /// Builds the styled footer button body.
   /// - Parameter configuration: The button configuration supplied by SwiftUI.
@@ -23,7 +27,8 @@ struct FooterButtonStyle: ButtonStyle {
   }
 }
 
-/// Styles timer preset buttons in the preset grid.
+/// Styles preset duration buttons with `.regularMaterial` fill, a border,
+/// and a slightly smaller scale factor (0.985) than the footer for subtlety.
 struct PresetButtonStyle: ButtonStyle {
   /// Builds the styled preset button body.
   /// - Parameter configuration: The button configuration supplied by SwiftUI.

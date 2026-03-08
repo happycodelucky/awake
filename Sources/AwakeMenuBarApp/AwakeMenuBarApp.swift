@@ -1,3 +1,7 @@
+// MARK: - AwakeMenuBarApp
+// App entry point — creates AwakeController and AppUpdater, hosts the
+// MenuBarExtra scene. Runs as an accessory (no Dock icon).
+
 import AppKit
 import AwakeUI
 import SwiftUI
@@ -8,6 +12,9 @@ struct AwakeMenuBarApp: App {
   @StateObject private var controller = AwakeController()
   @StateObject private var updater = AppUpdater()
 
+  // AGENT: setActivationPolicy(.accessory) hides the app from the Dock and
+  // Cmd-Tab switcher. This is standard for menu bar-only utilities. The
+  // Info.plist also sets LSUIElement=true as a fallback.
   /// Configures the process to run as an accessory app without a Dock icon.
   init() {
     NSApplication.shared.setActivationPolicy(.accessory)

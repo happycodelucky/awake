@@ -1,3 +1,7 @@
+// MARK: - AwakeController
+// Core timer lifecycle, IOKit power assertions, and managed policy detection.
+// This is the central state object observed by all UI views via @ObservedObject.
+
 import AppKit
 import Foundation
 import IOKit.pwr_mgt
@@ -150,9 +154,17 @@ public final class AwakeController: ObservableObject {
     disablesAutoLogin: false
   )
 
+  // AGENT: clockTimer is nonisolated(unsafe) because Timer.scheduledTimer
+  // requires a non-isolated context, but the callback dispatches back to
+  // @MainActor via Task. The timer is only mutated in init and deinit.
   nonisolated(unsafe) private var clockTimer: Timer?
   private var powerAssertionID: IOPMAssertionID = 0
+  // AGENT: Policy refresh is throttled to 60s because reading plist files
+  // from /Library/Managed Preferences on every clock tick (1s) would cause
+  // unnecessary disk I/O. 60s balances freshness with performance.
   private var lastPolicyRefresh = Date.distantPast
+  // AGENT: UserDefaults keys use the "awake." prefix to namespace them within
+  // the app's defaults domain and avoid collisions with system or framework keys.
   private let endDateDefaultsKey = "awake.endDate"
   private let durationDefaultsKey = "awake.duration"
   private let pausedRemainingDefaultsKey = "awake.pausedRemaining"
@@ -415,7 +427,9 @@ public final class AwakeController: ObservableObject {
     return String(format: "%02d:%02d", minutes, seconds)
   }
 
-  /// Starts the one-second timer that advances session state and policy refreshes.
+  /// Starts the one-second timer that advances session state, checks for
+  /// expiration, and throttles policy refreshes. The timer is added to
+  /// `.common` run loop mode so it fires during modal tracking.
   private func startClock() {
     clockTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
       Task { @MainActor in
