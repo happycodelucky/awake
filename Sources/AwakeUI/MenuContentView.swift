@@ -74,7 +74,7 @@ public struct MenuContentView: View {
         isActive: controller.hasSession,
         colorScheme: colorScheme,
         actionButton: AnyView(heroActionButton)
-      )
+      ).padding([.vertical], 8)
 
       VStack(alignment: .leading, spacing: 10) {
         Text("Presets")
@@ -262,15 +262,25 @@ public struct MenuContentView: View {
 
   @ViewBuilder
   /// Builds the context-sensitive action button beside the timer value.
+  /// Both paused and active states respond to the Option key: holding ⌥
+  /// reveals the alternate action (stop while paused, pause while active).
   private var heroActionButton: some View {
     if controller.isPaused {
       Button {
-        controller.resume()
+        if modifierKeys.isOptionPressed {
+          controller.stop()
+        } else {
+          controller.resume()
+        }
       } label: {
-        CircleActionIcon(symbolName: "play.fill", fillColor: .orange)
+        CircleActionIcon(
+          symbolName: modifierKeys.isOptionPressed ? "xmark" : "play.fill",
+          fillColor: modifierKeys.isOptionPressed ? .red : .orange
+        )
       }
       .buttonStyle(.plain)
-      .help("Resume")
+      .help(modifierKeys.isOptionPressed ? "Stop session" : "Resume — Hold ⌥ to stop")
+      .transition(.scale.combined(with: .opacity))
     } else if controller.isActive {
       Button {
         if modifierKeys.isOptionPressed {
@@ -285,7 +295,8 @@ public struct MenuContentView: View {
         )
       }
       .buttonStyle(.plain)
-      .help(modifierKeys.isOptionPressed ? "Pause" : "Stop")
+      .help(modifierKeys.isOptionPressed ? "Pause session" : "Stop — Hold ⌥ to pause")
+      .transition(.scale.combined(with: .opacity))
     }
   }
 

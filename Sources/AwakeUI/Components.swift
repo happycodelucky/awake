@@ -14,7 +14,8 @@ struct TimerHeroView: View {
   let colorScheme: ColorScheme
   let actionButton: AnyView
 
-  /// Builds the hero card for the current timer state.
+  /// Builds the hero card for the current timer state. Animates ring
+  /// progress, text changes, and button appear/disappear transitions.
   var body: some View {
     ZStack {
       RacetrackRingShape()
@@ -23,12 +24,16 @@ struct TimerHeroView: View {
       RacetrackRingShape()
         .trim(from: 0, to: isActive ? max(progress, 0.015) : 0)
         .stroke(progressStyle, style: StrokeStyle(lineWidth: 16, lineCap: .round, lineJoin: .round))
+        .animation(.easeInOut(duration: 0.4), value: progress)
+        .animation(.easeInOut(duration: 0.35), value: isActive)
 
       VStack(spacing: 6) {
         Text(statusText)
           .font(.system(size: 12, weight: .bold, design: .rounded))
           .tracking(1.8)
           .foregroundStyle(.secondary)
+          .contentTransition(.opacity)
+          .animation(.easeInOut(duration: 0.25), value: statusText)
 
         HStack(alignment: .center, spacing: 12) {
           Text(timeText)
@@ -38,6 +43,8 @@ struct TimerHeroView: View {
             .minimumScaleFactor(0.55)
             .allowsTightening(true)
             .foregroundStyle(isActive ? progressStyle : AnyShapeStyle(.primary))
+            .contentTransition(.numericText(countsDown: true))
+            .animation(.easeInOut(duration: 0.35), value: isActive)
 
           actionButton
         }
@@ -47,6 +54,8 @@ struct TimerHeroView: View {
           .font(.system(size: 12, weight: .medium, design: .rounded))
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
+          .contentTransition(.opacity)
+          .animation(.easeInOut(duration: 0.25), value: detailText)
       }
       .padding(.horizontal, 28)
     }
@@ -76,7 +85,8 @@ struct CircleActionIcon: View {
   let symbolName: String
   let fillColor: Color
 
-  /// Builds the circular symbol presentation.
+  /// Builds the circular symbol presentation. Animates icon morphs and
+  /// fill-color changes so modifier-key swaps feel smooth.
   var body: some View {
     ZStack {
       Circle()
@@ -84,8 +94,11 @@ struct CircleActionIcon: View {
       Image(systemName: symbolName)
         .font(.system(size: 13, weight: .bold))
         .foregroundStyle(.white)
+        .contentTransition(.symbolEffect(.replace))
     }
     .frame(width: 36, height: 36)
+    .animation(.easeInOut(duration: 0.2), value: symbolName)
+    .animation(.easeInOut(duration: 0.2), value: fillColor)
   }
 }
 
