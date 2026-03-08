@@ -20,3 +20,12 @@
 - Use `FIXME:` for known bugs, incorrect behavior, or implementation problems that still need correction.
 - Use `AGENT:` for agent-specific rationale, implementation context, or learned details that will help future agents understand why a decision was made.
 - When looking for prior agent reasoning or project-specific learned context, read the existing `AGENT:` comments first before changing related code.
+
+## Documentation Maintenance
+
+- When adding new features or changing user-facing behavior, update the relevant guide in `guide/`.
+- When changing architecture, build system, integrations, or internal design, update the relevant doc in `docs/`.
+- When creating new integrations or subsystems, add a new doc in `docs/`.
+- Design plans and brainstorming artifacts go in `docs/plans/`.
+- Keep `guide/` written for end users — no developer jargon, no code.
+- Keep `docs/` written for agents and developers — include file paths, type names, and implementation details.
