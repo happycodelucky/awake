@@ -341,17 +341,13 @@ public final class AwakeController: ObservableObject {
     guard hasSession else { return "" }
 
     let remainingSeconds = max(0, Int(remainingInterval.rounded(.down)))
-    if remainingSeconds <= 90 {
-      return "\(remainingSeconds)s"
-    }
-
     let sessionStartedWithHour = (sessionDuration ?? 0) >= 3600
     let totalMinutes = remainingSeconds / 60
 
     if remainingSeconds >= 3600 || sessionStartedWithHour {
       let hours = totalMinutes / 60
       let minutes = totalMinutes % 60
-      return String(format: "%d:%02d", hours, minutes)
+      return String(format: "%dh %02dm", hours, minutes)
     }
 
     return "\(totalMinutes)m"
