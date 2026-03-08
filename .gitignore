@@ -1,0 +1,54 @@
+# ─────────────────────────────────────
+# Swift Package Manager
+# ─────────────────────────────────────
+.build/
+.swiftpm/
+
+# ─────────────────────────────────────
+# Xcode
+# ─────────────────────────────────────
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.xccheckout
+*.xcscmblueprint
+build/
+
+# ─────────────────────────────────────
+# VS Code
+# ─────────────────────────────────────
+.vscode/
+
+# ─────────────────────────────────────
+# Project output
+# ─────────────────────────────────────
+dist/
+
+# ─────────────────────────────────────
+# AI / local agent config
+# ─────────────────────────────────────
+AGENTS.md
+CLAUDE.md
+*.local.md
+.claude/settings.local.json
+
+# ─────────────────────────────────────
+# macOS
+# ─────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes

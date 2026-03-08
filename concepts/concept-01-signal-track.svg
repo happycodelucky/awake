@@ -1,0 +1,43 @@
+<svg width="360" height="520" viewBox="0 0 360 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="28" y1="20" x2="332" y2="500" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF7EE"/>
+      <stop offset="1" stop-color="#F3E2D1"/>
+    </linearGradient>
+    <linearGradient id="ringActive" x1="78" y1="74" x2="282" y2="278" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF8A3D"/>
+      <stop offset="1" stop-color="#FF4F7A"/>
+    </linearGradient>
+    <linearGradient id="ringBase" x1="76" y1="72" x2="286" y2="284" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F3D9C3"/>
+      <stop offset="1" stop-color="#E8C4B8"/>
+    </linearGradient>
+    <filter id="shadow" x="10" y="10" width="340" height="500" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#AA6B37" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <rect x="24" y="24" width="312" height="472" rx="30" fill="url(#bg)"/>
+  </g>
+  <text x="50" y="68" fill="#734A2A" font-size="18" font-family="Helvetica, Arial, sans-serif" font-weight="700">Awake</text>
+  <rect x="50" y="88" width="118" height="28" rx="14" fill="#FFF1E3"/>
+  <text x="66" y="107" fill="#AA5A20" font-size="13" font-family="Helvetica, Arial, sans-serif" font-weight="700">Mouse guard active</text>
+  <circle cx="180" cy="196" r="91" stroke="url(#ringBase)" stroke-width="18"/>
+  <path d="M180 105 A91 91 0 1 1 91.2 215.5" stroke="url(#ringActive)" stroke-width="18" stroke-linecap="round"/>
+  <text x="180" y="186" fill="#23160D" font-size="17" font-family="Helvetica, Arial, sans-serif" text-anchor="middle" letter-spacing="2">REMAINING</text>
+  <text x="180" y="224" fill="#D84C3F" font-size="52" font-family="Menlo, Monaco, monospace" font-weight="700" text-anchor="middle">12:45</text>
+  <text x="180" y="248" fill="#7C5D46" font-size="14" font-family="Helvetica, Arial, sans-serif" text-anchor="middle">75% of session left</text>
+  <rect x="50" y="304" width="260" height="1" fill="#E4CBB7"/>
+  <text x="50" y="336" fill="#8B6444" font-size="12" font-family="Helvetica, Arial, sans-serif" letter-spacing="2">QUICK START</text>
+  <rect x="50" y="352" width="78" height="42" rx="21" fill="#FFFFFF"/>
+  <rect x="140" y="352" width="78" height="42" rx="21" fill="#FFFFFF"/>
+  <rect x="230" y="352" width="80" height="42" rx="21" fill="#FFFFFF"/>
+  <text x="89" y="378" fill="#3E2A19" font-size="17" font-family="Helvetica, Arial, sans-serif" font-weight="700" text-anchor="middle">5 min</text>
+  <text x="179" y="378" fill="#3E2A19" font-size="17" font-family="Helvetica, Arial, sans-serif" font-weight="700" text-anchor="middle">15 min</text>
+  <text x="270" y="378" fill="#3E2A19" font-size="17" font-family="Helvetica, Arial, sans-serif" font-weight="700" text-anchor="middle">60 min</text>
+  <rect x="50" y="406" width="122" height="42" rx="21" fill="#FCE0D7"/>
+  <rect x="188" y="406" width="122" height="42" rx="21" fill="#FFEFE7"/>
+  <text x="111" y="432" fill="#A33835" font-size="17" font-family="Helvetica, Arial, sans-serif" font-weight="700" text-anchor="middle">Stop</text>
+  <text x="249" y="432" fill="#6D4B34" font-size="17" font-family="Helvetica, Arial, sans-serif" font-weight="700" text-anchor="middle">Quit</text>
+  <text x="50" y="474" fill="#9A7A60" font-size="13" font-family="Helvetica, Arial, sans-serif">Next wiggle in 00:28</text>
+</svg>
