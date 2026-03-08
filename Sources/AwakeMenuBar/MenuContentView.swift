@@ -27,6 +27,7 @@ final class ModifierKeyObserver: ObservableObject {
 
 struct MenuContentView: View {
     @ObservedObject var controller: AwakeController
+    @ObservedObject var updater: AppUpdater
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var modifierKeys = ModifierKeyObserver()
 
@@ -61,6 +62,14 @@ struct MenuContentView: View {
                 colorScheme: colorScheme,
                 actionButton: AnyView(heroActionButton)
             )
+
+            if let notice = updater.notice {
+                UpdateNoticeCard(
+                    notice: notice,
+                    primaryAction: { updater.installUpdate() },
+                    secondaryAction: { updater.dismissNotice() }
+                )
+            }
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("Presets")

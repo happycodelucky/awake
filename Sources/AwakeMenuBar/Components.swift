@@ -174,3 +174,58 @@ struct PolicyWarningCard: View {
         }
     }
 }
+
+struct UpdateNoticeCard: View {
+    let notice: AppUpdater.UpdateNotice
+    let primaryAction: () -> Void
+    let secondaryAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90.circle.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.blue)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(notice.title)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(notice.message)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if case let .downloading(progress) = notice.kind, let progress {
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(.blue)
+            }
+
+            HStack(spacing: 8) {
+                if let primaryActionTitle = notice.primaryActionTitle {
+                    Button(primaryActionTitle, action: primaryAction)
+                        .buttonStyle(UpdateCardPrimaryButtonStyle())
+                }
+
+                if let secondaryActionTitle = notice.secondaryActionTitle {
+                    Button(secondaryActionTitle, action: secondaryAction)
+                        .buttonStyle(UpdateCardSecondaryButtonStyle())
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.blue.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.blue.opacity(0.24))
+        )
+    }
+}

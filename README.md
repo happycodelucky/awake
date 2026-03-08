@@ -9,6 +9,10 @@
 
 > **AI Experiment:** This app was almost entirely written by AI (Codex & Claude Code), with only minor human edits. It's an experiment in AI-assisted software development — the design, architecture, and code are AI-generated. Use it, learn from it, fork it.
 
+## About
+
+Awake is a native macOS menu bar app that keeps your Mac awake for a chosen duration while surfacing managed-device policies that may still interrupt your session. It is built for Apple Silicon Macs running macOS 15+ and is especially useful for long-running local work such as AI agents, builds, downloads, and unattended tasks.
+
 ## Overview
 
 **Keeps your Mac awake** — beyond what `caffeinate` can do.

@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct AwakeMenuBarApp: App {
     @StateObject private var controller = AwakeController()
+    @StateObject private var updater = AppUpdater()
 
     init() {
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -11,7 +12,7 @@ struct AwakeMenuBarApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContentView(controller: controller)
+            MenuContentView(controller: controller, updater: updater)
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: menuBarIconName)

@@ -12,6 +12,7 @@ ADHOC_SIGN="${ADHOC_SIGN:-1}"
 
 if xcode-select -p &>/dev/null; then
   # Active developer directory (CLT or Xcode) — use xcrun for all tools.
+  SWIFT="$(xcrun --find swift)"
   SWIFTC="$(xcrun --find swiftc)"
   SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
   SIPS="$(xcrun --find sips)"
@@ -20,6 +21,7 @@ if xcode-select -p &>/dev/null; then
 elif [[ -d /Applications/Xcode.app/Contents/Developer ]]; then
   # xcode-select not configured but Xcode is installed — point at it directly.
   export DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
+  SWIFT="$(xcrun --find swift)"
   SWIFTC="$(xcrun --find swiftc)"
   SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
   SIPS="$(xcrun --find sips)"
@@ -39,9 +41,12 @@ APP_DIR="$DIST_DIR/$APP_NAME.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
+FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
 ICON_GENERATOR_BIN="$BUILD_DIR/generate_app_icon"
 ZIP_PATH="$DIST_DIR/$APP_NAME.zip"
-SOURCE_FILES=("$ROOT_DIR"/Sources/AwakeMenuBar/*.swift)
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-}"
+SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
+SPARKLE_CHECK_INTERVAL="${SPARKLE_CHECK_INTERVAL:-86400}"
 SIGN_MODE="unsigned"
 
 mkdir -p "$DIST_DIR" "$BUILD_DIR"
@@ -52,13 +57,14 @@ if [[ -e "$APP_DIR" ]]; then
   echo "Moved existing app bundle to $BACKUP_PATH"
 fi
 
-mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
+mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$FRAMEWORKS_DIR"
 
 rm -f "$ZIP_PATH"
-rm -f "$BUILD_DIR"/"$APP_NAME"-*
 rm -f "$ICON_GENERATOR_BIN"
 rm -f "$RESOURCES_DIR/AppIcon.icns"
 rm -rf "$BUILD_DIR/ModuleCache"
+rm -rf "$BUILD_DIR"/spm-*
+rm -rf "$FRAMEWORKS_DIR"/*
 
 mkdir -p "$BUILD_DIR/ModuleCache"
 export CLANG_MODULE_CACHE_PATH="$BUILD_DIR/ModuleCache"
@@ -108,23 +114,45 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
   <true/>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
+  <key>SUEnableAutomaticChecks</key>
+  <true/>
+  <key>SUAutomaticallyUpdate</key>
+  <false/>
+  <key>SUScheduledCheckInterval</key>
+  <integer>${SPARKLE_CHECK_INTERVAL}</integer>
 </dict>
 </plist>
 EOF
 
+if [[ -n "$SPARKLE_FEED_URL" ]]; then
+  /usr/libexec/PlistBuddy -c "Add :SUFeedURL string $SPARKLE_FEED_URL" "$CONTENTS_DIR/Info.plist"
+fi
+
+if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+  /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string $SPARKLE_PUBLIC_ED_KEY" "$CONTENTS_DIR/Info.plist"
+fi
+
 declare -a BINARIES=()
 for arch in "${ARCHS[@]}"; do
+  scratch_path="$BUILD_DIR/spm-${arch}"
   binary_path="$BUILD_DIR/${APP_NAME}-${arch}"
   BINARIES+=("$binary_path")
-  echo "Compiling ${arch}..."
-  "$SWIFTC" \
-    -Osize \
-    -parse-as-library \
-    -sdk "$SDK_PATH" \
-    -target "${arch}-apple-macosx${DEPLOYMENT_TARGET}" \
-    -module-cache-path "$BUILD_DIR/ModuleCache" \
-    "${SOURCE_FILES[@]}" \
-    -o "$binary_path"
+  echo "Building package for ${arch}..."
+  "$SWIFT" build \
+    --package-path "$ROOT_DIR" \
+    --scratch-path "$scratch_path" \
+    -c release \
+    --arch "$arch" \
+    --product AwakeMenuBar
+
+  bin_path="$("$SWIFT" build \
+    --package-path "$ROOT_DIR" \
+    --scratch-path "$scratch_path" \
+    -c release \
+    --arch "$arch" \
+    --show-bin-path)"
+
+  cp "$bin_path/AwakeMenuBar" "$binary_path"
 done
 
 if [[ "${#BINARIES[@]}" -eq 1 ]]; then
@@ -135,6 +163,12 @@ else
 fi
 
 chmod +x "$MACOS_DIR/$APP_NAME"
+
+sparkle_framework_path="$(find "$BUILD_DIR" -path "*/release/Sparkle.framework" -type d | head -n 1)"
+if [[ -n "$sparkle_framework_path" ]]; then
+  echo "Embedding Sparkle.framework..."
+  cp -R "$sparkle_framework_path" "$FRAMEWORKS_DIR/"
+fi
 
 if [[ -z "$SIGN_IDENTITY" ]]; then
   SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/"[^"]+"/ { print $2; exit }')"
