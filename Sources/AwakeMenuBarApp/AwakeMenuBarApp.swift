@@ -25,47 +25,165 @@ struct AwakeMenuBarApp: App {
     MenuBarExtra {
       MenuContentView(controller: controller, updater: updater)
     } label: {
-      HStack(spacing: 10) {
-        Image(systemName: menuBarIconName)
-          .symbolRenderingMode(.monochrome)
-          .foregroundStyle(menuBarIconColor)
-
-        if controller.hasSession {
-          Text(controller.menuBarClockText)
-            .font(.system(size: 12, weight: .bold, design: .rounded))
-            .monospacedDigit()
-            .lineLimit(1)
-            .frame(width: 42, alignment: .center)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .background(
-              Capsule(style: .continuous)
-                .fill(menuBarPillColor)
-            )
-        }
-      }
+      // AGENT: MenuBarExtra only renders Image and Text views in its label.
+      // Custom views (HStack, Canvas, styled views) are silently ignored.
+      // We composite the icon + pill badge into a single NSImage instead.
+      Image(nsImage: menuBarImage)
     }
     .menuBarExtraStyle(.window)
   }
 
-  /// Returns the menu bar icon name for the current assertion state.
+  // MARK: - Composited menu bar image
+
+  /// Builds a composited NSImage containing the mug icon and optional countdown pill.
+  private var menuBarImage: NSImage {
+    if controller.hasSession {
+      return compositeMenuBarImage(
+        iconName: menuBarIconName,
+        iconColor: menuBarIconNSColor,
+        badgeText: controller.menuBarClockText,
+        pillColor: menuBarPillNSColor
+      )
+    } else {
+      return compositeMenuBarImage(
+        iconName: menuBarIconName,
+        iconColor: menuBarIconNSColor,
+        badgeText: nil,
+        pillColor: nil
+      )
+    }
+  }
+
+  /// Returns the SF Symbol name for the current assertion state.
   private var menuBarIconName: String {
     controller.powerAssertionIsActive ? "mug.fill" : "mug"
   }
 
   /// Returns the tint applied to the menu bar icon.
-  private var menuBarIconColor: Color {
-    if controller.powerAssertionIsActive {
-      return .green
-    }
-    return .primary
+  private var menuBarIconNSColor: NSColor {
+    controller.powerAssertionIsActive ? .systemGreen : .labelColor
   }
 
   /// Returns the background color used behind the countdown text.
-  private var menuBarPillColor: Color {
+  private var menuBarPillNSColor: NSColor {
     if controller.powerAssertionIsActive {
-      return .green.opacity(0.16)
+      return NSColor.systemGreen.withAlphaComponent(0.16)
     }
-    return .primary.opacity(0.12)
+    return NSColor.labelColor.withAlphaComponent(0.12)
   }
+}
+
+// MARK: - Menu bar image compositing
+
+/// Composites an SF Symbol icon and optional pill badge into a single NSImage
+/// suitable for use as a MenuBarExtra label.
+///
+/// - Parameters:
+///   - iconName: SF Symbol name for the icon (e.g. "mug" or "mug.fill").
+///   - iconColor: Tint color applied to the icon.
+///   - badgeText: Optional countdown text displayed inside a pill. Pass nil to omit the badge.
+///   - pillColor: Background color of the pill. Required when `badgeText` is non-nil.
+/// - Returns: A composited NSImage sized for the menu bar.
+private func compositeMenuBarImage(
+  iconName: String,
+  iconColor: NSColor,
+  badgeText: String?,
+  pillColor: NSColor?
+) -> NSImage {
+  let iconHeight: CGFloat = 16
+  let spacing: CGFloat = 4
+  let hPad: CGFloat = 6
+  let vPad: CGFloat = 2
+
+  // --- Icon ---
+  // AGENT: We use NSImage(systemSymbolName:) with a point-size configuration
+  // to get a consistently sized SF Symbol. The image is drawn tinted by
+  // setting the icon color as fill before drawing.
+  let symbolConfig = NSImage.SymbolConfiguration(pointSize: iconHeight, weight: .regular)
+  let rawIcon = NSImage(systemSymbolName: iconName, accessibilityDescription: "Awake")?
+    .withSymbolConfiguration(symbolConfig) ?? NSImage()
+  let iconSize = rawIcon.size
+
+  // --- Badge measurement ---
+  let font = roundedBoldFont(size: 11)
+  var badgeSize = CGSize.zero
+  var textSize = CGSize.zero
+  var attrString: NSAttributedString?
+
+  if let badgeText {
+    let attrs: [NSAttributedString.Key: Any] = [
+      .font: font,
+      .foregroundColor: NSColor.labelColor,
+    ]
+    let str = NSAttributedString(string: badgeText, attributes: attrs)
+    textSize = str.size()
+    badgeSize = CGSize(width: textSize.width + hPad * 2, height: textSize.height + vPad * 2)
+    attrString = str
+  }
+
+  // --- Canvas size ---
+  let totalWidth: CGFloat
+  if badgeText != nil {
+    totalWidth = iconSize.width + spacing + badgeSize.width
+  } else {
+    totalWidth = iconSize.width
+  }
+  let totalHeight = max(iconSize.height, badgeSize.height)
+  let imageSize = NSSize(width: ceil(totalWidth), height: ceil(totalHeight))
+
+  // --- Draw ---
+  // AGENT: NSImage(size:flipped:drawingHandler:) defers drawing and
+  // automatically handles retina scaling via the backing store.
+  let image = NSImage(size: imageSize, flipped: false) { rect in
+    // Draw icon centered vertically
+    let iconY = (rect.height - iconSize.height) / 2
+    let iconRect = NSRect(x: 0, y: iconY, width: iconSize.width, height: iconSize.height)
+
+    // Tint the icon by drawing it with the desired color
+    iconColor.set()
+    rawIcon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+
+    // If the icon is template, we need to draw it as a mask with our color
+    if rawIcon.isTemplate {
+      NSGraphicsContext.current?.saveGraphicsState()
+      rawIcon.draw(in: iconRect)
+      iconColor.setFill()
+      iconRect.fill(using: .sourceAtop)
+      NSGraphicsContext.current?.restoreGraphicsState()
+    }
+
+    // Draw badge if present
+    if let attrString, let pillColor {
+      let pillX = iconSize.width + spacing
+      let pillY = (rect.height - badgeSize.height) / 2
+      let pillRect = NSRect(x: pillX, y: pillY, width: badgeSize.width, height: badgeSize.height)
+      let pillPath = NSBezierPath(roundedRect: pillRect, xRadius: badgeSize.height / 2, yRadius: badgeSize.height / 2)
+
+      pillColor.setFill()
+      pillPath.fill()
+
+      let textX = pillX + hPad
+      let textY = pillY + vPad
+      attrString.draw(at: NSPoint(x: textX, y: textY))
+    }
+
+    return true
+  }
+
+  // AGENT: Setting isTemplate = false ensures the menu bar does not
+  // override our custom colors with its own vibrancy/tinting.
+  image.isTemplate = false
+  return image
+}
+
+/// Returns a rounded-design bold system font at the given size.
+///
+/// Falls back to the standard bold system font if the rounded design
+/// descriptor is unavailable.
+private func roundedBoldFont(size: CGFloat) -> NSFont {
+  let desc = NSFontDescriptor
+    .preferredFontDescriptor(forTextStyle: .body)
+    .withDesign(.rounded)?
+    .withSymbolicTraits(.bold) ?? NSFontDescriptor()
+  return NSFont(descriptor: desc, size: size) ?? NSFont.boldSystemFont(ofSize: size)
 }
