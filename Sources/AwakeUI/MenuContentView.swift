@@ -151,11 +151,22 @@ public struct MenuContentView: View {
         )
       }
 
-      Button("Quit") {
-        NSApplication.shared.terminate(nil)
+      HStack(spacing: 8) {
+        Button("Quit") {
+          NSApplication.shared.terminate(nil)
+        }
+        .frame(maxWidth: .infinity)
+        .buttonStyle(FooterButtonStyle())
+
+        /// Settings button — placeholder for future settings UI.
+        Button {
+          // TODO: Open settings
+        } label: {
+          Image(systemName: "gearshape.fill")
+        }
+        .buttonStyle(FooterIconButtonStyle())
+        .help("Settings")
       }
-      .frame(maxWidth: .infinity)
-      .buttonStyle(FooterButtonStyle())
     }
     .padding(14)
     .frame(width: 312)
