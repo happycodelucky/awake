@@ -37,8 +37,6 @@ dist/
 # ─────────────────────────────────────
 # AI / local agent config
 # ─────────────────────────────────────
-AGENTS.md
-CLAUDE.md
 *.local.md
 .claude/settings.local.json
 

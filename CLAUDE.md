@@ -1,0 +1,1 @@
+Get all your information from @AGENTS.md
