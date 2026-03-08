@@ -69,14 +69,6 @@ public struct MenuContentView: View {
         actionButton: AnyView(heroActionButton)
       )
 
-      if let notice = updater.notice {
-        UpdateNoticeCard(
-          notice: notice,
-          primaryAction: { updater.installUpdate() },
-          secondaryAction: { updater.dismissNotice() }
-        )
-      }
-
       VStack(alignment: .leading, spacing: 10) {
         Text("Presets")
           .font(.system(size: 11, weight: .semibold, design: .rounded))
@@ -101,6 +93,22 @@ public struct MenuContentView: View {
             }
             .buttonStyle(PresetButtonStyle())
           }
+        }
+      }
+
+      if let notice = updater.notice {
+        VStack(alignment: .leading, spacing: 10) {
+          Text("Update")
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+            .tracking(1.4)
+
+          UpdateNoticeCard(
+            notice: notice,
+            primaryAction: { updater.installUpdate() },
+            secondaryAction: { updater.dismissNotice() }
+          )
         }
       }
 
