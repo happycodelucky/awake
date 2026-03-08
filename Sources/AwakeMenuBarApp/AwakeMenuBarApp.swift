@@ -37,39 +37,15 @@ struct AwakeMenuBarApp: App {
 
   /// Builds a composited NSImage containing the mug icon and optional countdown pill.
   private var menuBarImage: NSImage {
-    if controller.hasSession {
-      return compositeMenuBarImage(
-        iconName: menuBarIconName,
-        iconColor: menuBarIconNSColor,
-        badgeText: controller.menuBarClockText,
-        pillColor: menuBarPillNSColor
-      )
-    } else {
-      return compositeMenuBarImage(
-        iconName: menuBarIconName,
-        iconColor: menuBarIconNSColor,
-        badgeText: nil,
-        pillColor: nil
-      )
-    }
+    compositeMenuBarImage(
+      iconName: menuBarIconName,
+      badgeText: controller.hasSession ? controller.menuBarClockText : nil,
+    )
   }
 
   /// Returns the SF Symbol name for the current assertion state.
   private var menuBarIconName: String {
     controller.powerAssertionIsActive ? "mug.fill" : "mug"
-  }
-
-  /// Returns the tint applied to the menu bar icon.
-  private var menuBarIconNSColor: NSColor {
-    controller.powerAssertionIsActive ? .systemGreen : .labelColor
-  }
-
-  /// Returns the background color used behind the countdown text.
-  private var menuBarPillNSColor: NSColor {
-    if controller.powerAssertionIsActive {
-      return NSColor.systemGreen.withAlphaComponent(0.16)
-    }
-    return NSColor.labelColor.withAlphaComponent(0.12)
   }
 }
 
@@ -86,9 +62,7 @@ struct AwakeMenuBarApp: App {
 /// - Returns: A composited NSImage sized for the menu bar.
 private func compositeMenuBarImage(
   iconName: String,
-  iconColor: NSColor,
   badgeText: String?,
-  pillColor: NSColor?
 ) -> NSImage {
   let iconHeight: CGFloat = 16
   let spacing: CGFloat = 4
@@ -105,19 +79,18 @@ private func compositeMenuBarImage(
   let iconSize = rawIcon.size
 
   // --- Badge measurement ---
-  let font = roundedBoldFont(size: 11)
   var badgeSize = CGSize.zero
-  var textSize = CGSize.zero
   var attrString: NSAttributedString?
 
   if let badgeText {
+    let font = roundedBoldFont(size: 11)
     let attrs: [NSAttributedString.Key: Any] = [
       .font: font,
       .foregroundColor: NSColor.labelColor,
     ]
     let str = NSAttributedString(string: badgeText, attributes: attrs)
-    textSize = str.size()
-    badgeSize = CGSize(width: textSize.width + hPad * 2, height: textSize.height + vPad * 2)
+    let measuredSize = str.size()
+    badgeSize = CGSize(width: measuredSize.width + hPad * 2, height: measuredSize.height + vPad * 2)
     attrString = str
   }
 
@@ -139,33 +112,41 @@ private func compositeMenuBarImage(
     let iconY = (rect.height - iconSize.height) / 2
     let iconRect = NSRect(x: 0, y: iconY, width: iconSize.width, height: iconSize.height)
 
-    // Tint the icon by drawing it with the desired color
-    iconColor.set()
-    rawIcon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-
-    // If the icon is template, we need to draw it as a mask with our color
     if rawIcon.isTemplate {
       NSGraphicsContext.current?.saveGraphicsState()
       rawIcon.draw(in: iconRect)
-      iconColor.setFill()
+      NSColor.labelColor.setFill()
       iconRect.fill(using: .sourceAtop)
       NSGraphicsContext.current?.restoreGraphicsState()
+    } else {
+      rawIcon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
     }
 
-    // Draw badge if present
-    if let attrString, let pillColor {
-      let pillX = iconSize.width + spacing
-      let pillY = (rect.height - badgeSize.height) / 2
-      let pillRect = NSRect(x: pillX, y: pillY, width: badgeSize.width, height: badgeSize.height)
-      let pillPath = NSBezierPath(roundedRect: pillRect, xRadius: badgeSize.height / 2, yRadius: badgeSize.height / 2)
+      if let attrString {
+        let pillX = iconSize.width + spacing
+        let pillY = (rect.height - badgeSize.height) / 2
+        let pillRect = NSRect(x: pillX, y: pillY, width: badgeSize.width, height: badgeSize.height)
+        let pillPath = NSBezierPath(roundedRect: pillRect, xRadius: badgeSize.height / 2, yRadius: badgeSize.height / 2)
 
-      pillColor.setFill()
-      pillPath.fill()
+        // Fill the pill using the provided color (e.g., white)
+        NSColor.labelColor.withAlphaComponent(0.85).setFill()
+        pillPath.fill()
 
-      let textX = pillX + hPad
-      let textY = pillY + vPad
-      attrString.draw(at: NSPoint(x: textX, y: textY))
-    }
+        // Compute text origin (baseline point for NSAttributedString.draw(at:))
+        let textX = pillX + hPad
+        let textY = pillY + vPad
+
+        // Knock out the text from the pill by drawing with destinationOut blend mode
+        if let ctx = NSGraphicsContext.current?.cgContext {
+          ctx.saveGState()
+          ctx.setBlendMode(.destinationOut)
+
+          // Use fully opaque color so the glyph mask is solid; font must match measurement
+        attrString.draw(at: NSPoint(x: textX, y: textY))
+
+          ctx.restoreGState()
+        }
+      }
 
     return true
   }
