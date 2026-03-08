@@ -21,6 +21,21 @@ public final class AwakeController: ObservableObject {
     let managedPolicyState: ManagedPolicyState
   }
 
+  /// A predefined timer duration with display metadata.
+  struct Preset: Identifiable {
+    /// User-facing label (e.g. "5 minutes", "1 hour").
+    let label: String
+    /// Compact label for buttons (e.g. "5m", "1h").
+    let shortLabel: String
+    /// Duration in minutes.
+    let minutes: Int
+    /// Category tag (e.g. "quick", "task", "workday").
+    let mode: String
+
+    /// Identifies the preset by its minute value.
+    var id: Int { minutes }
+  }
+
   /// Represents the managed macOS policies that may still interrupt an awake session.
   struct ManagedPolicyState {
     let screenSaverIdleTime: TimeInterval?
@@ -171,16 +186,17 @@ public final class AwakeController: ObservableObject {
   private let sleepBehaviorDefaultsKey = "awake.sleepBehavior"
   private let powerAssertionReason = "Keep the Mac awake for an active Awake timer" as CFString
 
-  let presets: [(label: String, minutes: Int)] = [
-    ("5 minutes", 5),
-    ("10 minutes", 10),
-    ("15 minutes", 15),
-    ("30 minutes", 30),
-    ("1 hour", 60),
-    ("2 hours", 2 * 60),
-    ("4 hours", 4 * 60),
-    ("8 hours", 8 * 60),
-    ("12 hours", 12 * 60),
+  /// Available timer presets shown in the menu grid.
+  let presets: [Preset] = [
+    Preset(label: "5 minutes",  shortLabel: "5m",  minutes: 5,       mode: "quick"),
+    Preset(label: "10 minutes", shortLabel: "10m", minutes: 10,      mode: "quick"),
+    Preset(label: "15 minutes", shortLabel: "15m", minutes: 15,      mode: "task"),
+    Preset(label: "30 minutes", shortLabel: "30m", minutes: 30,      mode: "task"),
+    Preset(label: "1 hour",     shortLabel: "1h",  minutes: 60,      mode: "task"),
+    Preset(label: "2 hours",    shortLabel: "2h",  minutes: 2 * 60,  mode: "long task"),
+    Preset(label: "4 hours",    shortLabel: "4h",  minutes: 4 * 60,  mode: "long task"),
+    Preset(label: "8 hours",    shortLabel: "8h",  minutes: 8 * 60,  mode: "workday"),
+    Preset(label: "12 hours",   shortLabel: "12h", minutes: 12 * 60, mode: "good luck"),
   ]
 
   /// Restores persisted session state and starts the live timer loop.

@@ -44,6 +44,7 @@ struct TimerHeroView: View {
             .allowsTightening(true)
             .foregroundStyle(isActive ? progressStyle : AnyShapeStyle(.primary))
             .contentTransition(.numericText(countsDown: true))
+            .animation(.easeInOut(duration: 0.3), value: timeText)
             .animation(.easeInOut(duration: 0.35), value: isActive)
 
           actionButton

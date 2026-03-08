@@ -52,18 +52,22 @@ public struct MenuContentView: View {
   /// Builds the full menu content shown from the menu bar extra.
   public var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      HStack(alignment: .top) {
-        VStack(alignment: .leading, spacing: 4) {
+      VStack(alignment: .leading, spacing: 4) {
+        HStack(alignment: .top) {
           Text("Awake")
             .font(.system(size: 18, weight: .semibold, design: .rounded))
+          
+            Spacer(minLength: 12)
+            Label(statusTitle, systemImage: statusSymbol)
+              .font(.system(size: 12, weight: .semibold, design: .rounded))
+              .foregroundStyle(statusStyle)
+          
+        }
           Text(controller.pulseStatusLine)
+              .lineLimit(2)
             .font(.system(size: 12, weight: .medium, design: .rounded))
             .foregroundStyle(.secondary)
-        }
-        Spacer(minLength: 12)
-        Label(statusTitle, systemImage: statusSymbol)
-          .font(.system(size: 12, weight: .semibold, design: .rounded))
-          .foregroundStyle(statusStyle)
+            
       }
 
       TimerHeroView(
@@ -84,14 +88,14 @@ public struct MenuContentView: View {
           .tracking(1.4)
 
         LazyVGrid(columns: columns, spacing: 8) {
-          ForEach(controller.presets, id: \.minutes) { preset in
+          ForEach(controller.presets) { preset in
             Button {
               controller.start(minutes: preset.minutes)
             } label: {
               VStack(spacing: 2) {
-                Text(presetButtonTitle(for: preset))
+                Text(preset.shortLabel)
                   .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text(presetButtonSubtitle(for: preset))
+                Text(preset.mode)
                   .font(.system(size: 11, weight: .medium, design: .rounded))
                   .foregroundStyle(.secondary)
               }
@@ -239,13 +243,11 @@ public struct MenuContentView: View {
   /// Returns the descriptive line shown beneath the main timer value.
   private var heroDetailText: String {
     if controller.isPaused {
-      return "Resume or pick a new timer"
+      return "Resume or Hold ⌥ to stop"
     }
     if controller.isActive {
       if controller.powerAssertionIsActive {
-        return controller.keepsDisplayAwake
-          ? "macOS will keep the display on for this session"
-          : "macOS will keep background work running while the display can sleep"
+          return "Hold ⌥ to pause"
       }
       return "macOS could not acquire the power assertion"
     }
@@ -300,38 +302,6 @@ public struct MenuContentView: View {
     }
   }
 
-  /// Formats the compact title shown on a preset button.
-  /// - Parameter preset: The preset being rendered.
-  /// - Returns: A short duration label.
-  private func presetButtonTitle(for preset: (label: String, minutes: Int)) -> String {
-    switch preset.minutes {
-    case 60:
-      return "1h"
-    case 2 * 60:
-      return "2h"
-    case 4 * 60:
-      return "4h"
-    case 8 * 60:
-      return "8h"
-    case 12 * 60:
-      return "12h"
-    default:
-      return "\(preset.minutes)m"
-    }
-  }
-
-  /// Returns the supporting category label for a preset button.
-  /// - Parameter preset: The preset being rendered.
-  /// - Returns: A short descriptive subtitle.
-  private func presetButtonSubtitle(for preset: (label: String, minutes: Int)) -> String {
-    if preset.minutes < 60 {
-      return "quick"
-    }
-    if preset.minutes == 60 {
-      return "focus"
-    }
-    return "long"
-  }
 }
 
 #if DEBUG
