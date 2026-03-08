@@ -44,6 +44,10 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: ./scripts/bundle_app.sh
 
+      - name: Compute release checksum
+        run: |
+          echo "AWAKE_ZIP_SHA256=$(shasum -a 256 dist/Awake.zip | awk '{print $1}')" >> "$GITHUB_ENV"
+
       - name: Create and push tag
         env:
           TAG: ${{ env.TAG }}
@@ -81,3 +85,14 @@ jobs:
           else
             gh release create "$TAG" dist/Awake.zip --title "$TAG" --generate-notes
           fi
+
+      - name: Publish Homebrew cask to tap
+        if: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN != '' }}
+        env:
+          VERSION: ${{ inputs.version }}
+          SHA256: ${{ env.AWAKE_ZIP_SHA256 }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY }}
+          TAP_BRANCH: ${{ vars.HOMEBREW_TAP_BRANCH }}
+          TAP_CASK_PATH: ${{ vars.HOMEBREW_TAP_CASK_PATH }}
+        run: ./scripts/publish_homebrew_cask.sh

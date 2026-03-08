@@ -31,6 +31,13 @@ Awake is a macOS menu bar utility that prevents your Mac from sleeping for a set
 
 [Download the latest release →](https://github.com/happycodelucky/awake/releases/latest)
 
+If you publish the tap described below, Homebrew install is:
+
+```bash
+brew tap happycodelucky/tap
+brew install --cask awake
+```
+
 ## Build from Source
 
 Requirements:
@@ -59,8 +66,29 @@ ADHOC_SIGN=0 ./scripts/bundle_app.sh
 ## GitHub Actions
 
 - `CI` runs on every push to `main`, on pull requests, and on manual dispatch. It validates `swift build` and the app bundling flow on `macos-15`.
-- `Release` is manual for now. Trigger it from the Actions tab with a version like `1.0.0`; it builds `dist/Awake.app` and `dist/Awake.zip`, creates `v1.0.0` if needed, and publishes `Awake.zip` to GitHub Releases.
+- `Release` is manual for now. Trigger it from the Actions tab with a version like `1.0.0`; it builds `dist/Awake.app` and `dist/Awake.zip`, creates `v1.0.0` if needed, publishes `Awake.zip` to GitHub Releases, computes the SHA-256 checksum, and can push an updated Homebrew cask into a tap repo.
 - There are no Swift tests in the package yet, so the current CI signal is a build-and-bundle smoke test.
+
+## Homebrew Tap
+
+The project repo now carries the authoritative cask template at `packaging/homebrew/Casks/awake.rb.template`. Release automation renders that template against the exact `Awake.zip` uploaded to GitHub Releases, then commits the updated cask into a dedicated tap repository.
+
+Recommended setup:
+
+1. Create a tap repo such as `happycodelucky/homebrew-tap`.
+2. Add a repository secret named `HOMEBREW_TAP_GITHUB_TOKEN` in this repo with write access to the tap repo.
+3. Optionally add repository variables if you want non-default values:
+   - `HOMEBREW_TAP_REPOSITORY` defaults to `happycodelucky/homebrew-tap`
+   - `HOMEBREW_TAP_BRANCH` defaults to `main`
+   - `HOMEBREW_TAP_CASK_PATH` defaults to `Casks/awake.rb`
+4. On each release workflow run, the cask publisher will render and push the updated cask automatically after the GitHub release succeeds.
+
+Local rendering example:
+
+```bash
+SHA256="$(shasum -a 256 dist/Awake.zip | awk '{print $1}')"
+./scripts/render_homebrew_cask.sh --version 1.0.0 --sha256 "$SHA256"
+```
 
 ## Usage
 
@@ -77,7 +105,6 @@ If your Mac is managed by an MDM or enterprise profile, Awake will show a warnin
 - [ ] **IPC / MCP control** — allow AI agents and external tools to start, stop, and query Awake sessions programmatically
 - [ ] Swift tests for timer logic and policy parsing
 - [ ] Automatic release promotion from tags once the release process settles
-- [ ] Homebrew cask
 
 ## License
 
