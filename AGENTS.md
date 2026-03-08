@@ -21,6 +21,10 @@
 - Use `AGENT:` for agent-specific rationale, implementation context, or learned details that will help future agents understand why a decision was made.
 - When looking for prior agent reasoning or project-specific learned context, read the existing `AGENT:` comments first before changing related code.
 
+## Agent Review
+
+Agent mistakes are tracked in `AGENT_REVIEW.md`.
+
 ## Documentation Maintenance
 
 - When adding new features or changing user-facing behavior, update the relevant guide in `guide/`.

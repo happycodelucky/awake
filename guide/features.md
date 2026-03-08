@@ -40,9 +40,13 @@ The badge disappears when the session ends.
 
 While a session is running, you can pause it instead of stopping it entirely.
 
-**To pause:** Hold the **Option key** while clicking the stop button in the popover. The button changes from a red X to an orange pause icon while Option is held. Releasing the click pauses the session and saves the remaining time.
+**To pause:** Hold the **Option key** (⌥) while clicking the stop button in the popover. The button changes from a red X to an orange pause icon while Option is held. Releasing the click pauses the session and saves the remaining time. The button tooltip also updates to reflect the alternate action.
 
-When paused, the popover shows a play button. Click it to resume — the countdown picks up exactly where it left off. The menu bar badge remains visible while paused.
+When paused, the popover shows a play button. Click it to resume — the countdown picks up exactly where it left off.
+
+**To stop while paused:** Hold the **Option key** (⌥) while clicking the resume button. The button changes from an orange play icon to a red X, and clicking it ends the session completely.
+
+The menu bar badge remains visible while paused.
 
 ---
 
