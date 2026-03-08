@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Build Swift package
+        run: swift build
+
+      - name: Build macOS app bundle
+        env:
+          VERSION: ci-${{ github.run_number }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./scripts/bundle_app.sh
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: awake-ci-artifacts
+          path: |
+            dist/Awake.app
+            dist/Awake.zip

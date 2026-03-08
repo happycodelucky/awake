@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the v prefix
+        required: true
+        type: string
+      notes:
+        description: Release notes for GitHub Releases
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive release metadata
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          echo "TAG=v${INPUT_VERSION}" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Build release artifacts
+        env:
+          VERSION: ${{ inputs.version }}
+        run: ./scripts/bundle_app.sh
+
+      - name: Create and push tag
+        env:
+          TAG: ${{ env.TAG }}
+        run: |
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists locally."
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+          fi
+
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already exists on origin."
+          else
+            git push origin "$TAG"
+          fi
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: awake-release-${{ env.TAG }}
+          path: |
+            dist/Awake.app
+            dist/Awake.zip
+
+      - name: Publish GitHub release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAG: ${{ env.TAG }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/Awake.zip --clobber
+          elif [[ -n "$NOTES" ]]; then
+            gh release create "$TAG" dist/Awake.zip --title "$TAG" --notes "$NOTES"
+          else
+            gh release create "$TAG" dist/Awake.zip --title "$TAG" --generate-notes
+          fi

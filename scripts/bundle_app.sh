@@ -44,8 +44,7 @@ ZIP_PATH="$DIST_DIR/$APP_NAME.zip"
 SOURCE_FILES=("$ROOT_DIR"/Sources/AwakeMenuBar/*.swift)
 SIGN_MODE="unsigned"
 
-mkdir -p "$DIST_DIR" "$BUILD_DIR" "$BUILD_DIR/ModuleCache"
-export CLANG_MODULE_CACHE_PATH="$BUILD_DIR/ModuleCache"
+mkdir -p "$DIST_DIR" "$BUILD_DIR"
 
 if [[ -e "$APP_DIR" ]]; then
   BACKUP_PATH="$DIST_DIR/${APP_NAME}-previous-${BUILD_NUMBER}.app"
@@ -59,6 +58,10 @@ rm -f "$ZIP_PATH"
 rm -f "$BUILD_DIR"/"$APP_NAME"-*
 rm -f "$ICON_GENERATOR_BIN"
 rm -f "$RESOURCES_DIR/AppIcon.icns"
+rm -rf "$BUILD_DIR/ModuleCache"
+
+mkdir -p "$BUILD_DIR/ModuleCache"
+export CLANG_MODULE_CACHE_PATH="$BUILD_DIR/ModuleCache"
 
 echo "Generating app icon..."
 "$SWIFTC" \

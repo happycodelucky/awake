@@ -2,7 +2,7 @@
 
 ![macOS 15+](https://img.shields.io/badge/macOS-15%2B-blue.svg?style=for-the-badge&logo=apple)
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-black.svg?style=for-the-badge&logo=apple)
-[![Build](https://img.shields.io/github/actions/workflow/status/happycodelucky/awake/build.yml?style=for-the-badge&label=build)](https://github.com/happycodelucky/awake/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/happycodelucky/awake/ci.yml?style=for-the-badge&label=ci)](https://github.com/happycodelucky/awake/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/happycodelucky/awake?style=for-the-badge)](https://github.com/happycodelucky/awake/releases/latest)
 [![License: PolyForm NC](https://img.shields.io/badge/license-PolyForm%20NC%201.0-orange.svg?style=for-the-badge)](LICENSE)
 [![Maintained](https://img.shields.io/badge/Maintained%3F-yes-green.svg?style=for-the-badge)](https://github.com/happycodelucky/awake/graphs/commit-activity)
@@ -29,10 +29,7 @@ Awake is a macOS menu bar utility that prevents your Mac from sleeping for a set
 
 ## Download
 
-> **GitHub Releases coming soon.** In the meantime, build from source (see below).
-
-<!-- TODO: Add release link once GitHub Actions CI is set up -->
-<!-- [Download the latest release →](https://github.com/happycodelucky/awake/releases/latest) -->
+[Download the latest release →](https://github.com/happycodelucky/awake/releases/latest)
 
 ## Build from Source
 
@@ -59,6 +56,12 @@ To build without ad-hoc signing:
 ADHOC_SIGN=0 ./scripts/bundle_app.sh
 ```
 
+## GitHub Actions
+
+- `CI` runs on every push to `main`, on pull requests, and on manual dispatch. It validates `swift build` and the app bundling flow on `macos-15`.
+- `Release` is manual for now. Trigger it from the Actions tab with a version like `1.0.0`; it builds `dist/Awake.app` and `dist/Awake.zip`, creates `v1.0.0` if needed, and publishes `Awake.zip` to GitHub Releases.
+- There are no Swift tests in the package yet, so the current CI signal is a build-and-bundle smoke test.
+
 ## Usage
 
 1. Click the **Awake** icon in your menu bar (a mug icon)
@@ -72,7 +75,8 @@ If your Mac is managed by an MDM or enterprise profile, Awake will show a warnin
 ## Roadmap
 
 - [ ] **IPC / MCP control** — allow AI agents and external tools to start, stop, and query Awake sessions programmatically
-- [ ] **GitHub Actions CI** — automated builds and GitHub Releases on tag push
+- [ ] Swift tests for timer logic and policy parsing
+- [ ] Automatic release promotion from tags once the release process settles
 - [ ] Homebrew cask
 
 ## License
