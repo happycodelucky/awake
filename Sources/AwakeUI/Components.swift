@@ -1,3 +1,7 @@
+// MARK: - Components
+// Reusable view components: TimerHeroView, CircleActionIcon,
+// PolicyWarningCard, and UpdateNoticeCard.
+
 import SwiftUI
 
 /// Renders the primary timer summary, ring, and session action in the menu.
@@ -92,7 +96,9 @@ struct PolicyWarningCard: View {
   let possible: [String]
   @State private var isExpanded = false
 
-  /// Builds the policy warning card UI.
+  /// Builds the expandable policy warning card. Starts collapsed showing
+  /// only the title and disclaimer. Tapping "More" reveals Known (confirmed
+  /// active) and Likely (conditional) policy details.
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       HStack(alignment: .top, spacing: 10) {

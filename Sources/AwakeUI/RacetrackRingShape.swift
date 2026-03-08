@@ -1,3 +1,6 @@
+// MARK: - RacetrackRingShape
+// Custom InsettableShape that draws the rounded racetrack used by the timer ring.
+
 import SwiftUI
 
 /// Draws the rounded racetrack path used by the timer ring.

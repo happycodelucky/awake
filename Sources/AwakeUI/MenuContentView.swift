@@ -1,3 +1,7 @@
+// MARK: - MenuContentView
+// Menu bar popover layout: preset grid, timer hero, behavior toggle,
+// policy warnings, update notices, and modifier-key observation.
+
 import AppKit
 import SwiftUI
 
@@ -6,6 +10,9 @@ import SwiftUI
 final class ModifierKeyObserver: ObservableObject {
   @Published private(set) var isOptionPressed = false
 
+  // AGENT: localMonitor is nonisolated(unsafe) because NSEvent.addLocalMonitorForEvents
+  // returns an opaque token that AppKit manages. The monitor is added in init and
+  // removed in deinit — no concurrent mutation occurs.
   nonisolated(unsafe) private var localMonitor: Any?
 
   /// Starts observing local modifier-flag changes.
