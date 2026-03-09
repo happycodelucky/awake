@@ -14,7 +14,8 @@ Key characteristics:
 - **Timer-driven.** A one-second repeating `Timer` ticks on the main run loop, advancing `@Published` state that SwiftUI observes directly.
 - **IOKit power assertions.** Two assertion types cover two distinct sleep behaviors: one that also blocks display sleep and one that allows it.
 - **Managed policy awareness.** At launch and on a 60-second throttle thereafter, the controller reads `/Library/Managed Preferences` plists to detect MDM-enforced screensaver, lock, and auto-logout policies that Awake cannot override. When relevant policies are found, a warning card surfaces in the UI.
-- **State persistence.** Session state (end date, duration, paused remaining) and behavior preference (sleep behavior) survive across relaunches via `UserDefaults`.
+- **State persistence.** Session state (end date, duration, paused remaining), behavior preference (sleep behavior), and appearance mode survive across relaunches via `UserDefaults`.
+- **Login item registration.** Optional start-at-login via `SMAppService.mainApp` (ServiceManagement framework). The toggle reads the actual system state rather than storing a boolean.
 - **Sparkle updates.** Update checking is conditional — Sparkle only activates when the app bundle contains both `SUFeedURL` and `SUPublicEDKey` Info.plist keys.
 
 Minimum deployment target: **macOS 15.0**. Default build target: **Apple Silicon (arm64)**.
@@ -46,6 +47,7 @@ Sparkle is a dependency of `AwakeUI`, not the executable. This means the library
 |---|---|---|
 | [Sparkle](https://github.com/sparkle-project/Sparkle) | `>= 2.8.0` (resolved: 2.9.0) | Automatic update checking and installation. `AppUpdater` wraps `SPUUpdater` and `SPUUserDriver`. Active only when `SUFeedURL` and `SUPublicEDKey` are present in the app bundle's Info.plist; the wrapper silently disables itself otherwise. |
 | IOKit (`IOKit.pwr_mgt`) | System | `IOPMAssertionCreateWithName` / `IOPMAssertionRelease` for power assertions. Imported in `AwakeController.swift`. |
+| ServiceManagement (`SMAppService`) | System | Login item registration. `SMAppService.mainApp.register()` / `.unregister()` in `AwakeController.setLaunchAtLogin(_:)`. |
 | AppKit | System | `NSApplication`, `NSEvent` (modifier key monitoring in `MenuContentView`), and `NSUserName()` (managed policy user path). |
 | SwiftUI | System | All views and the `MenuBarExtra` scene. |
 | Foundation | System | `Timer`, `UserDefaults`, `PropertyListSerialization`, `URL`, `Date`, `TimeInterval`. |
@@ -58,11 +60,11 @@ Sparkle is a dependency of `AwakeUI`, not the executable. This means the library
 
 | File | Primary types | Role |
 |---|---|---|
-| `AwakeController.swift` | `AwakeController`, `ManagedPolicyState`, `BehaviorPolicyNotice`, `SleepBehavior` | Central `@MainActor ObservableObject`. Owns the one-second clock timer, IOKit power assertions, session lifecycle (`start`, `pause`, `resume`, `stop`), `UserDefaults` persistence (`saveState` / `restoreSavedState`), and managed policy loading. All `@Published` properties drive the SwiftUI layer. |
-| `MenuContentView.swift` | `MenuContentView`, `ModifierKeyObserver` | Root SwiftUI view rendered inside the `MenuBarExtra` window. Composes the header badge, `TimerHeroView`, `UpdateNoticeCard`, preset grid, behavior toggle, `PolicyWarningCard`, and quit button. `ModifierKeyObserver` tracks the Option key so the action button toggles between its primary and alternate action in both active and paused states. |
+| `AwakeController.swift` | `AwakeController`, `ManagedPolicyState`, `BehaviorPolicyNotice`, `SleepBehavior`, `AppearanceMode` | Central `@MainActor ObservableObject`. Owns the one-second clock timer, IOKit power assertions, session lifecycle (`start`, `pause`, `resume`, `stop`), `UserDefaults` persistence (`saveState` / `restoreSavedState`), managed policy loading, login item registration (`SMAppService`), and appearance mode management. All `@Published` properties drive the SwiftUI layer. |
+| `MenuContentView.swift` | `MenuContentView`, `ModifierKeyObserver` | Root SwiftUI view rendered inside the `MenuBarExtra` window. Composes the header badge, `TimerHeroView`, `UpdateNoticeCard`, preset grid, `PolicyWarningCard`, and quit button. Toggles between main timer controls and a settings panel via `@State showingSettings`. The settings view contains grouped sections for General (login item), Appearance (theme mode), Behavior (display sleep toggle), and a placeholder MCP Server section. `ModifierKeyObserver` tracks the Option key so the action button toggles between its primary and alternate action in both active and paused states. |
 | `AppUpdater.swift` | `AppUpdater`, `UpdateNotice`, `UpdateNotice.Kind` | `@MainActor ObservableObject` that wraps `SPUUpdater` (the Sparkle engine) and implements both `SPUUpdaterDelegate` and `SPUUserDriver`. Translates Sparkle lifecycle callbacks into a single `@Published var notice: UpdateNotice?` value consumed by `MenuContentView`. |
-| `Components.swift` | `TimerHeroView`, `CircleActionIcon`, `PolicyWarningCard`, `UpdateNoticeCard` | Self-contained SwiftUI view components. `TimerHeroView` renders the racetrack ring progress, large countdown text, and context-sensitive action button with animated state transitions (ring progress, text crossfades, digit rolling, button scale/opacity). `CircleActionIcon` animates SF Symbol morphs via `.symbolEffect(.replace)` and fill-color transitions when the Option key toggles the action. `PolicyWarningCard` shows expandable MDM policy warnings. `UpdateNoticeCard` shows update state and action buttons. |
-| `Styles.swift` | `PresetButtonStyle`, `FooterButtonStyle`, `UpdateCardPrimaryButtonStyle`, `UpdateCardSecondaryButtonStyle` | `ButtonStyle` implementations that apply consistent rounded-rectangle material backgrounds, pressed-state scale effects, and typography to the four distinct button roles in the UI. |
+| `Components.swift` | `TimerHeroView`, `CircleActionIcon`, `PolicyWarningCard`, `UpdateNoticeCard`, `SettingsGroupBox` | Self-contained SwiftUI view components. `SettingsGroupBox` wraps settings content in a material-filled rounded rectangle card matching the existing card pattern. `TimerHeroView` renders the racetrack ring progress, large countdown text, and context-sensitive action button with animated state transitions (ring progress, text crossfades, digit rolling, button scale/opacity). `CircleActionIcon` animates SF Symbol morphs via `.symbolEffect(.replace)` and fill-color transitions when the Option key toggles the action. `PolicyWarningCard` shows expandable MDM policy warnings. `UpdateNoticeCard` shows update state and action buttons. |
+| `Styles.swift` | `PresetButtonStyle`, `FooterButtonStyle`, `FooterIconButtonStyle`, `DoneButtonStyle`, `UpdateCardPrimaryButtonStyle`, `UpdateCardSecondaryButtonStyle` | `ButtonStyle` implementations that apply consistent rounded-rectangle material backgrounds, pressed-state scale effects, and typography to the distinct button roles in the UI. `DoneButtonStyle` uses a blue filled background with white text for the settings Done button. |
 | `RacetrackRingShape.swift` | `RacetrackRingShape` | `InsettableShape` that draws a stadium/racetrack outline (two semicircles connected by straight lines). Used by `TimerHeroView` for both the track layer and the `.trim`-animated progress layer. |
 
 ### `Sources/AwakeMenuBarApp/`
@@ -114,6 +116,7 @@ Session and behavior state are persisted to `UserDefaults.standard` using four k
 | `awake.duration` | `Double` (seconds) | The full length of the session originally started. Used to compute ring progress. Cleared when the session stops. |
 | `awake.pausedRemaining` | `Double` (seconds) | The remaining time at the moment the user paused. Non-zero value takes precedence over `awake.endDate` during restore — the controller enters paused state rather than active state. |
 | `awake.sleepBehavior` | `String` (raw value of `SleepBehavior`) | Either `"keepDisplayAwake"` or `"allowDisplaySleep"`. Persisted on every behavior change. Restored unconditionally at launch. |
+| `awake.appearanceMode` | `String` (raw value of `AppearanceMode`) | One of `"system"`, `"light"`, or `"dark"`. Applied to `NSApp.appearance` at launch and whenever the user changes the picker. |
 
 Restore logic priority:
 
