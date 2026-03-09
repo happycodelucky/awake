@@ -6,7 +6,7 @@
 - When asked to compile or rebuild the app, first terminate any running Awake process with `pkill -x Awake`.
 - After a successful compile or rebuild, relaunch the fresh app bundle with `open dist/Awake.app`.
 - Output artifacts are `dist/Awake.app` and `dist/Awake.zip`.
-- Default bundle id is `com.akkio.apps.awake`.
+- Default bundle id is `com.happycodelucky.apps.awake`.
 - Default target is Apple Silicon only: `arm64`.
 - Default minimum macOS version is `15.0`.
 - Ad-hoc signing is enabled by default. To force unsigned output, run `ADHOC_SIGN=0 ./scripts/bundle_app.sh`.
