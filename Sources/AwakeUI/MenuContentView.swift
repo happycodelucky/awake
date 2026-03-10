@@ -225,29 +225,29 @@ public struct MenuContentView: View {
         )
       }
 
-      Toggle(isOn: keepDisplayAwakeBinding) {
-        VStack(alignment: .leading, spacing: 2) {
-          Text("Keep display awake")
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
-          Text(
-            "Turn off for long background runs when the Mac should stay awake but the screen can sleep."
-          )
-          .font(.system(size: 11, weight: .medium, design: .rounded))
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
+        Toggle(isOn: keepDisplayAwakeBinding) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Keep display awake")
+              .font(.system(size: 13, weight: .semibold, design: .rounded))
+            Text(
+              "Turn off for long background runs when the Mac should stay awake but the screen can sleep."
+            )
+            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+          }
         }
-      }
-      .toggleStyle(.switch)
-      .padding(.horizontal, 14)
-      .padding(.vertical, 12)
-      .background(
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-          .fill(.regularMaterial)
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-          .strokeBorder(Color.secondary.opacity(0.12))
-      )
+        .toggleStyle(.switch)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+          RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(.regularMaterial)
+        )
+        .overlay(
+          RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .strokeBorder(Color.secondary.opacity(0.12))
+        )
     }
 
     HStack(spacing: 8) {

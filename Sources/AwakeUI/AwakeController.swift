@@ -524,8 +524,20 @@ public final class AwakeController: ObservableObject {
   }
 
   /// Applies the current appearance mode to `NSApp`.
+  ///
+  /// Only assigns `NSApp.appearance` when an explicit override (light/dark)
+  /// is active, or when reverting a previous override back to system default.
+  // AGENT: Setting NSApp.appearance = nil is NOT the same as never setting it.
+  // The MenuBarExtra .window style panel inherits special vibrancy/material
+  // from the menu bar. Assigning nil when NSApp.appearance was never touched
+  // forces AppKit to re-resolve the appearance chain, which breaks the
+  // panel's native material and makes controls (Toggle, backgrounds) render
+  // differently. We guard against this by only assigning when there is
+  // already an override in place or when we need to install one.
   private func applyAppearance() {
-    NSApp.appearance = appearanceMode.nsAppearance
+    let desired = appearanceMode.nsAppearance
+    guard desired != nil || NSApp.appearance != nil else { return }
+    NSApp.appearance = desired
   }
 
   /// Ensures the power assertion matches the current timer state.
