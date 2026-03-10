@@ -4,6 +4,7 @@
 
 import AppKit
 import AwakeUI
+import Combine
 import SwiftUI
 import os
 
@@ -21,13 +22,47 @@ import os
 // AGENT: @MainActor is required because AwakeController is @MainActor-isolated.
 // NSApplicationDelegate methods are always called on the main thread on macOS,
 // so marking the class @MainActor is safe and correct here.
+//
+// AGENT: AwakeAppDelegate conforms to ObservableObject so that
+// @NSApplicationDelegateAdaptor wraps it as @ObservedObject in the App struct.
+// When the delegate's @Published properties change, the App struct body
+// re-evaluates — which re-reads controller.hasSession and controller.menuBarClockText,
+// updating the menu bar label. Without ObservableObject conformance the App
+// struct body never re-runs and the menu bar pill freezes.
 @MainActor
-final class AwakeAppDelegate: NSObject, NSApplicationDelegate {
+final class AwakeAppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
   // AGENT: The delegate owns the controller — NOT the App struct. This
   // ensures the controller is created eagerly when the delegate is
   // instantiated (during NSApplicationDelegate setup, before the SwiftUI
   // body runs), so it is always available when application(_:open:) fires.
+  //
+  // AGENT: @Published here is intentional. AwakeController is an
+  // ObservableObject, but @Published on a reference type does NOT forward
+  // child objectWillChange signals automatically. Instead, we subscribe to
+  // the controller's objectWillChange publisher in init() and forward it
+  // through the delegate's own objectWillChange sink so the App struct
+  // body re-evaluates whenever any @Published property on the controller
+  // fires. See controllerSubscription below.
   let controller = AwakeController()
+
+  // AGENT: Holds the AnyCancellable for the controller → delegate
+  // objectWillChange forwarding subscription. Must be stored as a property
+  // or the subscription is immediately cancelled.
+  private var controllerSubscription: AnyCancellable?
+
+  /// Subscribes to the controller's change publisher so this delegate's own
+  /// objectWillChange fires whenever the controller mutates. This keeps the
+  /// App struct's body (which reads controller state for the menu bar label)
+  /// in sync with every @Published change on the controller.
+  override init() {
+    super.init()
+    // Forward controller changes through the delegate's objectWillChange.
+    // The App struct observes the delegate via @NSApplicationDelegateAdaptor,
+    // so this chain: controller change → delegate objectWillChange → App body re-run.
+    controllerSubscription = controller.objectWillChange
+      .receive(on: RunLoop.main)
+      .sink { [weak self] _ in self?.objectWillChange.send() }
+  }
 
   /// Called by AppKit when the app receives a URL to open (kAEGetURL Apple Event).
   /// This fires for both cold launch (URL queued before app started) and
