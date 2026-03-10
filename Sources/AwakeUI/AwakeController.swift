@@ -5,6 +5,7 @@
 import AppKit
 import Foundation
 import IOKit.pwr_mgt
+import os
 
 @MainActor
 /// Manages timer lifecycle, power assertions, and managed policy awareness.
@@ -15,6 +16,7 @@ public final class AwakeController: ObservableObject {
     let endDate: Date?
     let sessionDuration: TimeInterval?
     let pausedRemaining: TimeInterval?
+    let ipcSessions: [String: IPCSession]
     let powerAssertionIsActive: Bool
     let assertionErrorMessage: String?
     let sleepBehavior: SleepBehavior
@@ -157,6 +159,8 @@ public final class AwakeController: ObservableObject {
   @Published public private(set) var endDate: Date?
   @Published public private(set) var sessionDuration: TimeInterval?
   @Published public private(set) var pausedRemaining: TimeInterval?
+  /// Active IPC sessions keyed by caller-provided session identifier.
+  @Published public private(set) var ipcSessions: [String: IPCSession] = [:]
   @Published public private(set) var powerAssertionIsActive = false
   @Published private(set) var assertionErrorMessage: String?
   @Published private(set) var sleepBehavior: SleepBehavior = .keepDisplayAwake
@@ -184,7 +188,15 @@ public final class AwakeController: ObservableObject {
   private let durationDefaultsKey = "awake.duration"
   private let pausedRemainingDefaultsKey = "awake.pausedRemaining"
   private let sleepBehaviorDefaultsKey = "awake.sleepBehavior"
+  private let ipcSessionsDefaultsKey = "awake.ipcSessions"
   private let powerAssertionReason = "Keep the Mac awake for an active Awake timer" as CFString
+
+  /// Maximum duration allowed for IPC-initiated sessions (24 hours).
+  private let maxIPCDuration: TimeInterval = 86400
+
+  /// Logger for IPC session lifecycle events. Use Console.app or `log stream`
+  /// with subsystem `com.akkio.apps.awake` and category `ipc` to observe.
+  private let ipcLog = Logger(subsystem: "com.akkio.apps.awake", category: "ipc")
 
   /// Available timer presets shown in the menu grid.
   let presets: [Preset] = [
@@ -202,6 +214,7 @@ public final class AwakeController: ObservableObject {
   /// Restores persisted session state and starts the live timer loop.
   public init() {
     restoreSavedState()
+    restoreIPCSessions()
     refreshManagedPolicyState(force: true)
     startClock()
     syncPowerAssertion()
@@ -214,6 +227,7 @@ public final class AwakeController: ObservableObject {
     endDate = previewState.endDate
     sessionDuration = previewState.sessionDuration
     pausedRemaining = previewState.pausedRemaining
+    ipcSessions = previewState.ipcSessions
     powerAssertionIsActive = previewState.powerAssertionIsActive
     assertionErrorMessage = previewState.assertionErrorMessage
     sleepBehavior = previewState.sleepBehavior
@@ -229,8 +243,13 @@ public final class AwakeController: ObservableObject {
     }
   }
 
-  /// Indicates whether an awake session is currently running.
+  /// Indicates whether any awake session (app or IPC) is currently running.
   public var isActive: Bool {
+    effectiveEndDate != nil
+  }
+
+  /// Indicates whether the app session specifically has an active end date.
+  public var hasAppSession: Bool {
     guard let endDate else { return false }
     return endDate > now
   }
@@ -246,10 +265,16 @@ public final class AwakeController: ObservableObject {
     isActive || isPaused
   }
 
-  /// Returns normalized progress remaining for the active or paused session.
+  /// Indicates whether any IPC sessions are active.
+  public var hasIPCSessions: Bool {
+    !ipcSessions.isEmpty
+  }
+
+  /// Returns normalized progress remaining for the effective session.
   var progress: Double {
-    guard let sessionDuration, sessionDuration > 0 else { return 0 }
-    return min(max(remainingInterval / sessionDuration, 0), 1)
+    let duration = effectiveSessionDuration
+    guard duration > 0 else { return 0 }
+    return min(max(effectiveRemaining / duration, 0), 1)
   }
 
   /// Returns the short status line shown in the main menu header.
@@ -260,6 +285,13 @@ public final class AwakeController: ObservableObject {
     guard isActive else { return "Not keeping the Mac awake" }
     guard powerAssertionIsActive else {
       return assertionErrorMessage ?? "Unable to prevent idle sleep"
+    }
+    // AGENT: When only IPC sessions are active (no app session), show a
+    // distinct status line so the user knows external callers are driving.
+    if !hasAppSession && hasIPCSessions {
+      let count = ipcSessions.count
+      let noun = count == 1 ? "session" : "sessions"
+      return "Kept awake by \(count) external \(noun)"
     }
     switch sleepBehavior {
     case .keepDisplayAwake:
@@ -288,7 +320,7 @@ public final class AwakeController: ObservableObject {
     }
 
     if let screenSaverIdleTime = managedPolicyState.screenSaverIdleTime {
-      let willTriggerWithinSession = hasSession && remainingInterval > screenSaverIdleTime
+      let willTriggerWithinSession = hasSession && effectiveRemaining > screenSaverIdleTime
       let timing =
         willTriggerWithinSession
         ? "during this session"
@@ -340,8 +372,9 @@ public final class AwakeController: ObservableObject {
   public var menuBarClockText: String {
     guard hasSession else { return "" }
 
-    let remainingSeconds = max(0, Int(remainingInterval.rounded(.down)))
-    let sessionStartedWithHour = (sessionDuration ?? 0) >= 3600
+    let remaining = effectiveRemaining
+    let remainingSeconds = max(0, Int(remaining.rounded(.down)))
+    let sessionStartedWithHour = effectiveSessionDuration >= 3600
     let totalMinutes = remainingSeconds / 60
 
     if remainingSeconds >= 3600 || sessionStartedWithHour {
@@ -367,11 +400,12 @@ public final class AwakeController: ObservableObject {
     syncPowerAssertion()
   }
 
-  /// Pauses the current session while retaining the remaining duration.
+  /// Pauses the app session while retaining the remaining duration.
+  /// IPC sessions are not affected by pause.
   func pause() {
-    guard isActive else { return }
+    guard hasAppSession else { return }
 
-    pausedRemaining = remainingInterval
+    pausedRemaining = appSessionRemaining
     endDate = nil
     saveState()
     syncPowerAssertion()
@@ -389,13 +423,63 @@ public final class AwakeController: ObservableObject {
     syncPowerAssertion()
   }
 
-  /// Stops the current session and clears persisted timer state.
+  /// Stops all sessions (app and IPC) and clears persisted timer state.
   func stop() {
     endDate = nil
     sessionDuration = nil
     pausedRemaining = nil
+    ipcSessions = [:]
     saveState()
+    saveIPCSessions()
     syncPowerAssertion()
+  }
+
+  // MARK: - IPC session management
+
+  /// Registers or refreshes a named IPC session from an external caller.
+  ///
+  /// If a session with the same ID already exists, it is replaced with the new
+  /// duration. Durations are capped at `maxIPCDuration` (24 hours).
+  ///
+  /// - Parameters:
+  ///   - id: Caller-provided session identifier. Must be non-empty.
+  ///   - label: Display label shown in the session list. Must be non-empty.
+  ///   - duration: Requested duration in seconds. Capped at 24 hours.
+  /// - Returns: `true` if the session was accepted, `false` if validation failed.
+  @discardableResult
+  public func activateIPCSession(id: String, label: String, duration: TimeInterval) -> Bool {
+    guard !id.isEmpty, !label.isEmpty, duration > 0 else {
+      ipcLog.warning("activateIPCSession: rejected — id=\(id, privacy: .public) label=\(label, privacy: .public) duration=\(duration)")
+      return false
+    }
+
+    let clampedDuration = min(duration, maxIPCDuration)
+    ipcLog.info("activateIPCSession: id=\(id, privacy: .public) label=\(label, privacy: .public) raw=\(duration) clamped=\(clampedDuration)")
+
+    let activationDate = Date()
+
+    ipcSessions[id] = IPCSession(
+      id: id,
+      label: label,
+      endDate: activationDate.addingTimeInterval(clampedDuration),
+      createdDate: activationDate
+    )
+    saveIPCSessions()
+    syncPowerAssertion()
+    ipcLog.info("activateIPCSession: stored, total ipcSessions=\(self.ipcSessions.count)")
+    return true
+  }
+
+  /// Removes a named IPC session by its identifier.
+  /// - Parameter id: The session identifier to deactivate.
+  public func deactivateIPCSession(id: String) {
+    if ipcSessions.removeValue(forKey: id) != nil {
+      ipcLog.info("deactivateIPCSession: removed id=\(id, privacy: .public), remaining=\(self.ipcSessions.count)")
+      saveIPCSessions()
+      syncPowerAssertion()
+    } else {
+      ipcLog.warning("deactivateIPCSession: id=\(id, privacy: .public) not found — ignored")
+    }
   }
 
   /// Updates the sleep behavior and refreshes the power assertion when necessary.
@@ -407,17 +491,17 @@ public final class AwakeController: ObservableObject {
     sleepBehavior = newBehavior
     saveState()
 
-    guard isActive else { return }
+    guard effectiveEndDate != nil else { return }
 
     releasePowerAssertion()
     acquirePowerAssertionIfNeeded()
   }
 
-  /// Formats the remaining session time for either the menu bar or expanded UI.
+  /// Formats the effective remaining session time for either the menu bar or expanded UI.
   /// - Parameter compact: Indicates whether to use a short compact format.
   /// - Returns: A human-readable remaining-time string.
   public func formattedRemaining(compact: Bool = false) -> String {
-    let remaining = max(0, Int(remainingInterval))
+    let remaining = max(0, Int(effectiveRemaining))
     guard remaining > 0 else { return compact ? "Idle" : "00:00" }
     let hours = remaining / 3600
     let minutes = (remaining % 3600) / 60
@@ -427,7 +511,7 @@ public final class AwakeController: ObservableObject {
       if remaining <= 90 {
         return "\(remaining)s"
       }
-      if remaining >= 3600 || (sessionDuration ?? 0) >= 3600 {
+      if remaining >= 3600 || effectiveSessionDuration >= 3600 {
         return String(format: "%d:%02d", hours, minutes)
       }
       return "\(remaining / 60)m"
@@ -448,17 +532,26 @@ public final class AwakeController: ObservableObject {
         guard let self else { return }
         self.now = Date()
         self.refreshManagedPolicyState()
+        self.pruneExpiredIPCSessions()
+        // AGENT: Only stop the app session here — IPC sessions are pruned
+        // independently above. If IPC sessions still hold the Mac awake,
+        // the power assertion remains via syncPowerAssertion in prune.
         if let endDate = self.endDate, endDate <= self.now {
-          self.stop()
+          self.endDate = nil
+          self.sessionDuration = nil
+          self.pausedRemaining = nil
+          self.saveState()
+          self.syncPowerAssertion()
         }
       }
     }
     RunLoop.main.add(clockTimer!, forMode: .common)
   }
 
-  /// Ensures the power assertion matches the current timer state.
+  /// Ensures the power assertion matches the current effective timer state.
+  /// The assertion is held whenever any session (app or IPC) is active.
   private func syncPowerAssertion() {
-    if isActive {
+    if effectiveEndDate != nil {
       acquirePowerAssertionIfNeeded()
     } else {
       releasePowerAssertion()
@@ -556,8 +649,61 @@ public final class AwakeController: ObservableObject {
     UserDefaults.standard.set(sleepBehavior.rawValue, forKey: sleepBehaviorDefaultsKey)
   }
 
-  /// Returns the remaining duration for the active or paused session.
-  private var remainingInterval: TimeInterval {
+  // MARK: - Effective state (merged app + IPC sessions)
+
+  // AGENT: The "effective" properties merge the app session with all IPC sessions.
+  // The app session's own end date and the IPC sessions' end dates are combined
+  // to find the true awake deadline. This lets the UI, menu bar pill, and power
+  // assertion all reflect the maximum remaining time across all callers.
+
+  /// The furthest end date across the app session and all active IPC sessions.
+  /// Returns `nil` when no session of any kind is active.
+  private var effectiveEndDate: Date? {
+    var candidates: [Date] = []
+    if let endDate, endDate > now { candidates.append(endDate) }
+    candidates += ipcSessions.values.filter { $0.isActive(at: now) }.map(\.endDate)
+    return candidates.max()
+  }
+
+  /// The effective remaining interval across all active sessions.
+  /// Paused app sessions contribute their frozen remaining value.
+  private var effectiveRemaining: TimeInterval {
+    if let pausedRemaining, pausedRemaining > 0 {
+      // When paused, the app session contributes its frozen time.
+      // IPC sessions may still be running, so take the max.
+      let ipcMax = ipcSessions.values
+        .filter { $0.isActive(at: now) }
+        .map { $0.remaining(at: now) }
+        .max() ?? 0
+      return max(pausedRemaining, ipcMax)
+    }
+    guard let effective = effectiveEndDate else { return 0 }
+    return max(0, effective.timeIntervalSince(now))
+  }
+
+  /// The full duration of whichever session drives the effective end date.
+  /// Used by the progress ring to compute the full-arc reference.
+  private var effectiveSessionDuration: TimeInterval {
+    // If the app session drives the effective end date, use its explicit duration.
+    if let endDate, let effectiveEnd = effectiveEndDate, endDate == effectiveEnd {
+      return sessionDuration ?? effectiveRemaining
+    }
+    // If the app session is paused, use its duration for the ring.
+    if isPaused, let sessionDuration { return sessionDuration }
+    // Otherwise an IPC session is driving — use its creation-to-end duration.
+    if let winner = ipcSessions.values
+      .filter({ $0.isActive(at: now) })
+      .max(by: { $0.endDate < $1.endDate })
+    {
+      return winner.duration
+    }
+    // Fallback for edge cases.
+    return sessionDuration ?? effectiveRemaining
+  }
+
+  /// Returns the remaining duration for the app session only (not IPC sessions).
+  /// Used by pause to capture the app session's own remaining time.
+  private var appSessionRemaining: TimeInterval {
     if let endDate {
       return max(0, endDate.timeIntervalSince(now))
     }
@@ -565,6 +711,47 @@ public final class AwakeController: ObservableObject {
       return max(0, pausedRemaining)
     }
     return 0
+  }
+
+  // MARK: - IPC session persistence
+
+  /// Removes IPC sessions that have expired, persisting and syncing if any changed.
+  private func pruneExpiredIPCSessions() {
+    let expiredIDs = ipcSessions.values.filter { !$0.isActive(at: now) }.map(\.id)
+    guard !expiredIDs.isEmpty else { return }
+    ipcLog.info("pruneExpiredIPCSessions: pruning \(expiredIDs.count) expired session(s): \(expiredIDs.joined(separator: ","), privacy: .public)")
+    for id in expiredIDs { ipcSessions.removeValue(forKey: id) }
+    saveIPCSessions()
+    syncPowerAssertion()
+  }
+
+  /// Persists active IPC sessions to UserDefaults as a JSON-encoded array.
+  private func saveIPCSessions() {
+    let active = ipcSessions.values.filter { $0.isActive(at: Date()) }
+    if active.isEmpty {
+      UserDefaults.standard.removeObject(forKey: ipcSessionsDefaultsKey)
+      return
+    }
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .secondsSince1970
+    if let data = try? encoder.encode(Array(active)) {
+      UserDefaults.standard.set(data, forKey: ipcSessionsDefaultsKey)
+    }
+  }
+
+  /// Restores IPC sessions from UserDefaults, filtering out any that have expired.
+  private func restoreIPCSessions() {
+    guard let data = UserDefaults.standard.data(forKey: ipcSessionsDefaultsKey) else {
+      ipcLog.info("restoreIPCSessions: no persisted sessions found")
+      return
+    }
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .secondsSince1970
+    guard let sessions = try? decoder.decode([IPCSession].self, from: data) else { return }
+    let restoreDate = Date()
+    let active = sessions.filter { $0.isActive(at: restoreDate) }
+    ipcSessions = Dictionary(uniqueKeysWithValues: active.map { ($0.id, $0) })
+    ipcLog.info("restoreIPCSessions: restored \(self.ipcSessions.count) active session(s)")
   }
 
   /// Refreshes managed policy state on demand or at a throttled interval.
@@ -618,6 +805,7 @@ public final class AwakeController: ObservableObject {
         endDate: nil,
         sessionDuration: nil,
         pausedRemaining: nil,
+        ipcSessions: [:],
         powerAssertionIsActive: false,
         assertionErrorMessage: nil,
         sleepBehavior: .keepDisplayAwake,
@@ -647,7 +835,8 @@ public final class AwakeController: ObservableObject {
       keepsDisplayAwake: Bool = true,
       policyState: AwakeController.ManagedPolicyState? = nil,
       powerAssertionIsActive: Bool = true,
-      assertionErrorMessage: String? = nil
+      assertionErrorMessage: String? = nil,
+      ipcSessions: [String: IPCSession] = [:]
     ) -> Self {
       let now = Date(timeIntervalSinceReferenceDate: 0)
       return Self(
@@ -655,6 +844,7 @@ public final class AwakeController: ObservableObject {
         endDate: now.addingTimeInterval(remaining),
         sessionDuration: sessionDuration,
         pausedRemaining: nil,
+        ipcSessions: ipcSessions,
         powerAssertionIsActive: powerAssertionIsActive,
         assertionErrorMessage: assertionErrorMessage,
         sleepBehavior: keepsDisplayAwake ? .keepDisplayAwake : .allowDisplaySleep,
@@ -682,6 +872,7 @@ public final class AwakeController: ObservableObject {
         endDate: nil,
         sessionDuration: sessionDuration,
         pausedRemaining: remaining,
+        ipcSessions: [:],
         powerAssertionIsActive: false,
         assertionErrorMessage: nil,
         sleepBehavior: .keepDisplayAwake,

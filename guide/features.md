@@ -82,3 +82,13 @@ When an update is available, Awake shows a notice card inside the menu popover. 
 - Click **Dismiss** to hide the card and continue using the current version.
 
 Awake checks for updates automatically in the background when this feature is configured. No action is needed on your part unless an update card appears.
+
+---
+
+## URL Scheme (Remote Control)
+
+Awake can be controlled by other apps, scripts, and AI agents using the `awake://` URL scheme. External tools can start and stop named awake sessions without opening the Awake menu.
+
+Multiple sessions from different tools can overlap — your Mac stays awake until the longest one finishes. Active external sessions appear in a list below the timer in the Awake popover, where you can also stop them individually.
+
+See the [URL Scheme guide](url-scheme.md) for details and integration examples.

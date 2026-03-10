@@ -5,11 +5,61 @@
 import AppKit
 import AwakeUI
 import SwiftUI
+import os
+
+// MARK: - App delegate
+
+// AGENT: On macOS 26 (Tahoe), SwiftUI's onOpenURL does not fire for
+// MenuBarExtra-only apps (apps with no regular window scene). The Apple Event
+// for kAEGetURL (URL scheme open) is delivered to NSApplicationDelegate but
+// SwiftUI does not bridge it through to onOpenURL in this configuration.
+//
+// We use NSApplicationDelegateAdaptor to intercept the URL event at the
+// AppKit layer. The delegate owns the AwakeController (strong reference) and
+// the App struct accesses it via the delegate rather than creating its own.
+// This ensures the controller exists before the first URL event arrives.
+// AGENT: @MainActor is required because AwakeController is @MainActor-isolated.
+// NSApplicationDelegate methods are always called on the main thread on macOS,
+// so marking the class @MainActor is safe and correct here.
+@MainActor
+final class AwakeAppDelegate: NSObject, NSApplicationDelegate {
+  // AGENT: The delegate owns the controller — NOT the App struct. This
+  // ensures the controller is created eagerly when the delegate is
+  // instantiated (during NSApplicationDelegate setup, before the SwiftUI
+  // body runs), so it is always available when application(_:open:) fires.
+  let controller = AwakeController()
+
+  /// Called by AppKit when the app receives a URL to open (kAEGetURL Apple Event).
+  /// This fires for both cold launch (URL queued before app started) and
+  /// hot open (URL delivered to running instance).
+  func application(_ application: NSApplication, open urls: [URL]) {
+    ipcLog.info("AppDelegate.application(_:open:) received \(urls.count) URL(s)")
+    for url in urls {
+      ipcLog.info("URL: \(url.absoluteString, privacy: .public)")
+      guard let command = parseAwakeURL(url) else {
+        ipcLog.warning("AppDelegate.application(_:open:): unrecognized or malformed URL — ignored")
+        continue
+      }
+      // AGENT: Since the class is @MainActor, we are already on the main actor
+      // here. No Task dispatch needed.
+      switch command {
+      case .activate(let id, let label, let duration):
+        ipcLog.info("AppDelegate: activate session=\(id, privacy: .public) label=\(label, privacy: .public) duration=\(duration)")
+        controller.activateIPCSession(id: id, label: label, duration: duration)
+      case .deactivate(let id):
+        ipcLog.info("AppDelegate: deactivate session=\(id, privacy: .public)")
+        controller.deactivateIPCSession(id: id)
+      }
+    }
+  }
+}
+
+// MARK: - App struct
 
 /// Hosts the menu bar extra and shared observable app state.
 @main
 struct AwakeMenuBarApp: App {
-  @StateObject private var controller = AwakeController()
+  @NSApplicationDelegateAdaptor(AwakeAppDelegate.self) private var appDelegate
   @StateObject private var updater = AppUpdater()
 
   // AGENT: setActivationPolicy(.accessory) hides the app from the Dock and
@@ -20,10 +70,34 @@ struct AwakeMenuBarApp: App {
     NSApplication.shared.setActivationPolicy(.accessory)
   }
 
+  /// The controller is owned by the app delegate to ensure it exists before
+  /// the first URL open event fires. The App struct accesses it via the delegate.
+  private var controller: AwakeController { appDelegate.controller }
+
   /// Builds the menu bar scene for the app.
   var body: some Scene {
     MenuBarExtra {
       MenuContentView(controller: controller, updater: updater)
+        // AGENT: onOpenURL is kept here as a secondary handler for forward
+        // compatibility. On macOS versions where it does fire for MenuBarExtra,
+        // it routes the URL. On macOS 26, AppDelegate.application(_:open:) is
+        // the primary path. The two handlers are idempotent — an activate for
+        // the same session ID is a no-op replacement.
+        .onOpenURL { url in
+          ipcLog.info("onOpenURL received: \(url.absoluteString, privacy: .public)")
+          guard let command = parseAwakeURL(url) else {
+            ipcLog.warning("onOpenURL: unrecognized or malformed URL — ignored")
+            return
+          }
+          switch command {
+          case .activate(let id, let label, let duration):
+            ipcLog.info("onOpenURL: activate session=\(id, privacy: .public) label=\(label, privacy: .public) duration=\(duration)")
+            controller.activateIPCSession(id: id, label: label, duration: duration)
+          case .deactivate(let id):
+            ipcLog.info("onOpenURL: deactivate session=\(id, privacy: .public)")
+            controller.deactivateIPCSession(id: id)
+          }
+        }
     } label: {
       // AGENT: MenuBarExtra only renders Image and Text views in its label.
       // Custom views (HStack, Canvas, styled views) are silently ignored.
@@ -48,6 +122,12 @@ struct AwakeMenuBarApp: App {
     controller.powerAssertionIsActive ? "mug.fill" : "mug"
   }
 }
+
+// MARK: - IPC Logging
+
+/// Shared logger for URL scheme IPC dispatch events. Subsystem matches the
+/// bundle ID so Console.app and `log stream` can filter by subsystem + category.
+private let ipcLog = Logger(subsystem: "com.akkio.apps.awake", category: "ipc")
 
 // MARK: - Menu bar image compositing
 

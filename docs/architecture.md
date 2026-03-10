@@ -58,8 +58,10 @@ Sparkle is a dependency of `AwakeUI`, not the executable. This means the library
 
 | File | Primary types | Role |
 |---|---|---|
-| `AwakeController.swift` | `AwakeController`, `ManagedPolicyState`, `BehaviorPolicyNotice`, `SleepBehavior` | Central `@MainActor ObservableObject`. Owns the one-second clock timer, IOKit power assertions, session lifecycle (`start`, `pause`, `resume`, `stop`), `UserDefaults` persistence (`saveState` / `restoreSavedState`), and managed policy loading. All `@Published` properties drive the SwiftUI layer. |
-| `MenuContentView.swift` | `MenuContentView`, `ModifierKeyObserver` | Root SwiftUI view rendered inside the `MenuBarExtra` window. Composes the header badge, `TimerHeroView`, `UpdateNoticeCard`, preset grid, behavior toggle, `PolicyWarningCard`, and quit button. `ModifierKeyObserver` tracks the Option key so the action button toggles between its primary and alternate action in both active and paused states. |
+| `AwakeController.swift` | `AwakeController`, `ManagedPolicyState`, `BehaviorPolicyNotice`, `SleepBehavior` | Central `@MainActor ObservableObject`. Owns the one-second clock timer, IOKit power assertions, session lifecycle (`start`, `pause`, `resume`, `stop`), IPC session registry (`ipcSessions`), effective-state computation, `UserDefaults` persistence (`saveState` / `restoreSavedState` / `saveIPCSessions` / `restoreIPCSessions`), and managed policy loading. All `@Published` properties drive the SwiftUI layer. |
+| `IPCSession.swift` | `IPCSession` | `Codable` value type representing a named IPC awake session with id, label, end date, and created date. Provides remaining-time and active-check helpers. |
+| `IPCSessionListView.swift` | `IPCSessionListView` | SwiftUI card view listing active IPC sessions below the timer hero. Each row shows the session label, compact remaining time, and a deactivate button. Renders as a tight `VStack` for 7 or fewer sessions, or wraps in a `ScrollView` when more. |
+| `MenuContentView.swift` | `MenuContentView`, `ModifierKeyObserver` | Root SwiftUI view rendered inside the `MenuBarExtra` window. Composes the header badge, `TimerHeroView`, `IPCSessionListView`, `UpdateNoticeCard`, preset grid, behavior toggle, `PolicyWarningCard`, and quit button. `ModifierKeyObserver` tracks the Option key so the action button toggles between its primary and alternate action in both active and paused states. |
 | `AppUpdater.swift` | `AppUpdater`, `UpdateNotice`, `UpdateNotice.Kind` | `@MainActor ObservableObject` that wraps `SPUUpdater` (the Sparkle engine) and implements both `SPUUpdaterDelegate` and `SPUUserDriver`. Translates Sparkle lifecycle callbacks into a single `@Published var notice: UpdateNotice?` value consumed by `MenuContentView`. |
 | `Components.swift` | `TimerHeroView`, `CircleActionIcon`, `PolicyWarningCard`, `UpdateNoticeCard` | Self-contained SwiftUI view components. `TimerHeroView` renders the racetrack ring progress, large countdown text, and context-sensitive action button with animated state transitions (ring progress, text crossfades, digit rolling, button scale/opacity). `CircleActionIcon` animates SF Symbol morphs via `.symbolEffect(.replace)` and fill-color transitions when the Option key toggles the action. `PolicyWarningCard` shows expandable MDM policy warnings. `UpdateNoticeCard` shows update state and action buttons. |
 | `Styles.swift` | `PresetButtonStyle`, `FooterButtonStyle`, `UpdateCardPrimaryButtonStyle`, `UpdateCardSecondaryButtonStyle` | `ButtonStyle` implementations that apply consistent rounded-rectangle material backgrounds, pressed-state scale effects, and typography to the four distinct button roles in the UI. |
@@ -69,7 +71,8 @@ Sparkle is a dependency of `AwakeUI`, not the executable. This means the library
 
 | File | Primary types | Role |
 |---|---|---|
-| `AwakeMenuBarApp.swift` | `AwakeMenuBarApp` | `@main` App entry point. Sets activation policy to `.accessory` (no Dock icon), owns `AwakeController` and `AppUpdater` as `@StateObject`s, and declares the `MenuBarExtra` scene. The label closure renders the mug icon and optional countdown pill in the menu bar. |
+| `AwakeMenuBarApp.swift` | `AwakeMenuBarApp` | `@main` App entry point. Sets activation policy to `.accessory` (no Dock icon), owns `AwakeController` and `AppUpdater` as `@StateObject`s, and declares the `MenuBarExtra` scene. The label closure renders the mug icon and optional countdown pill in the menu bar. Handles `awake://` URLs via `onOpenURL`. |
+| `AwakeURL.swift` | `AwakeURLCommand`, `parseAwakeURL(_:)` | Pure URL parser for the `awake://` scheme. Validates incoming URLs and returns typed `AwakeURLCommand` values (.activate or .deactivate) for dispatch by the app entry point. |
 
 ---
 
@@ -166,3 +169,30 @@ Assertion lifecycle:
 `ManagedPolicyState.hasRelevantWarnings` is `true` when any of `screenSaverIdleTime`, `asksForPasswordAfterScreenSaver`, or `autoLogoutDelay` is set. Only when this is `true` does `AwakeController.behaviorPolicyNotice` return a non-nil `BehaviorPolicyNotice`, which `MenuContentView` uses to show `PolicyWarningCard`.
 
 Policy state is loaded once at launch (forced) and then refreshed on a 60-second throttle inside the `clockTimer` callback.
+
+---
+
+## URL Scheme IPC
+
+Awake registers the `awake` custom URL scheme (`CFBundleURLTypes` in Info.plist) to allow external tools to control awake sessions programmatically. Two routes are supported:
+
+- `awake://activate?session=<id>&label=<name>&duration=<seconds>` — creates or refreshes a named session.
+- `awake://deactivate?session=<id>` — removes a named session.
+
+**Session registry.** `AwakeController` maintains an `ipcSessions: [String: IPCSession]` dictionary alongside the existing app session state. Each `IPCSession` is a `Codable` value type storing `id`, `label`, `endDate`, and `createdDate`.
+
+**Effective state.** Three computed properties merge the app session and IPC sessions:
+
+- `effectiveEndDate` — the latest end date across all active sessions.
+- `effectiveRemaining` — seconds until `effectiveEndDate` (accounts for paused app session).
+- `effectiveSessionDuration` — duration of whichever session drives the effective end date (for ring progress).
+
+All UI-facing properties (`isActive`, `progress`, `menuBarClockText`, `formattedRemaining()`) read from these effective values.
+
+**URL handling.** `AwakeMenuBarApp` uses SwiftUI's `onOpenURL` modifier to receive URL events. The pure parser `parseAwakeURL(_:)` in `AwakeURL.swift` validates and extracts typed `AwakeURLCommand` values, which are dispatched to `AwakeController.activateIPCSession(id:label:duration:)` or `deactivateIPCSession(id:)`.
+
+**Persistence.** IPC sessions are stored as a JSON array in `UserDefaults` under `"awake.ipcSessions"` with `secondsSince1970` date encoding. They are restored at launch and pruned every second by the clock timer.
+
+**Duration cap.** IPC sessions are capped at 86,400 seconds (24 hours).
+
+See `docs/url-scheme.md` for the full technical reference.

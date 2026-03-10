@@ -120,6 +120,17 @@ cat > "$CONTENTS_DIR/Info.plist" <<EOF
   <false/>
   <key>SUScheduledCheckInterval</key>
   <integer>${SPARKLE_CHECK_INTERVAL}</integer>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>${BUNDLE_ID}.url</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>awake</string>
+      </array>
+    </dict>
+  </array>
 </dict>
 </plist>
 EOF
@@ -163,6 +174,12 @@ else
 fi
 
 chmod +x "$MACOS_DIR/$APP_NAME"
+
+# AGENT: SwiftPM links Sparkle with @rpath but only adds @loader_path (the
+# MacOS/ directory) to LC_RPATH. Sparkle.framework lives in Contents/Frameworks/,
+# so we need @loader_path/../Frameworks to resolve the @rpath reference.
+INSTALL_NAME_TOOL="$(xcrun --find install_name_tool)"
+"$INSTALL_NAME_TOOL" -add_rpath "@loader_path/../Frameworks" "$MACOS_DIR/$APP_NAME" 2>/dev/null || true
 
 sparkle_framework_path="$(find "$BUILD_DIR" -path "*/release/Sparkle.framework" -type d | head -n 1)"
 if [[ -n "$sparkle_framework_path" ]]; then

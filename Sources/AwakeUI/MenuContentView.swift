@@ -80,6 +80,14 @@ public struct MenuContentView: View {
         actionButton: AnyView(heroActionButton)
       ).padding([.vertical], 8)
 
+      if controller.hasIPCSessions {
+        IPCSessionListView(
+          sessions: controller.ipcSessions.values.sorted { $0.endDate > $1.endDate },
+          now: controller.now,
+          onDeactivate: { controller.deactivateIPCSession(id: $0) }
+        )
+      }
+
       VStack(alignment: .leading, spacing: 10) {
         Text("Presets")
           .font(.system(size: 11, weight: .semibold, design: .rounded))
@@ -246,6 +254,11 @@ public struct MenuContentView: View {
       return "Resume or Hold ⌥ to stop"
     }
     if controller.isActive {
+      // AGENT: When only IPC sessions are active (no app session), show a
+      // hint that external callers are driving the awake state.
+      if !controller.hasAppSession && controller.hasIPCSessions {
+        return "Kept awake by external sessions"
+      }
       if controller.powerAssertionIsActive {
           return "Hold ⌥ to pause"
       }
