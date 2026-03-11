@@ -8,7 +8,7 @@ import Foundation
 
 /// A named awake session created by an external caller through the `awake://` URL scheme.
 ///
-/// Sessions are stored in a dictionary keyed by `id` inside `AwakeController`.
+/// Sessions are stored in a dictionary keyed by `id` inside `AwakeSessionManager`.
 /// Multiple sessions can coexist — the effective awake duration is the maximum
 /// end date across all active sessions.
 public struct IPCSession: Codable, Equatable, Identifiable, Sendable {

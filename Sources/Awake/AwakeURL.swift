@@ -1,6 +1,6 @@
 // MARK: - AwakeURL
 // Pure URL parsing for the awake:// URL scheme. Validates incoming URLs and
-// extracts typed commands that the app entry point dispatches to AwakeController.
+// extracts typed commands that the app entry point dispatches to AwakeSessionManager.
 
 import Foundation
 

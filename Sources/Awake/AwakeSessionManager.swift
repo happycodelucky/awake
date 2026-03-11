@@ -1,6 +1,6 @@
-// MARK: - AwakeController
-// Core timer lifecycle, IOKit power assertions, and managed policy detection.
-// This is the central state object observed by all UI views via @ObservedObject.
+// MARK: - AwakeSessionManager
+// Central singleton for timer lifecycle, IOKit power assertions, IPC sessions,
+// and managed policy detection. All UI and the app delegate observe this shared instance.
 
 import AppKit
 import Foundation
@@ -9,8 +9,8 @@ import ServiceManagement
 import os
 
 @MainActor
-/// Manages timer lifecycle, power assertions, and managed policy awareness.
-final class AwakeController: ObservableObject {
+/// Singleton that manages timer lifecycle, IOKit power assertions, IPC sessions, and policy state.
+final class AwakeSessionManager: ObservableObject {
   /// Captures a stable controller snapshot used by previews.
   struct PreviewState {
     let now: Date
@@ -224,8 +224,14 @@ final class AwakeController: ObservableObject {
   private let maxIPCDuration: TimeInterval = 86400
 
   /// Logger for IPC session lifecycle events. Use Console.app or `log stream`
-  /// with subsystem `com.akkio.apps.awake` and category `ipc` to observe.
-  private let ipcLog = Logger(subsystem: "com.akkio.apps.awake", category: "ipc")
+  /// with subsystem matching the bundle ID and category `ipc` to observe.
+  private let ipcLog = Logger(subsystem: "com.happycodelucky.apps.awake", category: "ipc")
+
+  // AGENT: shared is the single live instance used by the app. The preview
+  // init (init(previewState:)) creates additional instances for Xcode Previews
+  // only — it bypasses singleton enforcement and never starts live timers.
+  /// The singleton session manager instance used by all app components.
+  static let shared = AwakeSessionManager()
 
   /// Available timer presets shown in the menu grid.
   let presets: [Preset] = [
@@ -241,16 +247,21 @@ final class AwakeController: ObservableObject {
   ]
 
   /// Restores persisted session state and starts the live timer loop.
-  init() {
+  /// Use `AwakeSessionManager.shared` — do not call directly.
+  private init() {
     restoreSavedState()
     restoreIPCSessions()
-    applyAppearance()
+    // AGENT: applyAppearance() must NOT be called here. NSApp is not yet
+    // initialized when AwakeSessionManager.init() runs (shared is accessed
+    // before NSApplicationMain completes). Appearance is applied later via
+    // applyAppearance(), which is called from
+    // AwakeAppDelegate.applicationDidFinishLaunching after NSApp is live.
     refreshManagedPolicyState(force: true)
     startClock()
     syncPowerAssertion()
   }
 
-  /// Creates a controller seeded with preview data.
+  /// Creates a session manager seeded with preview data.
   /// - Parameter previewState: The preview snapshot to expose.
   init(previewState: PreviewState) {
     now = previewState.now
@@ -630,7 +641,11 @@ final class AwakeController: ObservableObject {
   // panel's native material and makes controls (Toggle, backgrounds) render
   // differently. We guard against this by only assigning when there is
   // already an override in place or when we need to install one.
-  private func applyAppearance() {
+      /// Applies the stored appearance mode to NSApp. Must only be called after
+      /// NSApp is fully initialized (i.e., from applicationDidFinishLaunching or
+      /// later). Calling this from init() will crash because NSApp is nil at that
+      /// point.
+  func applyAppearance() {
     let desired = appearanceMode.nsAppearance
     guard desired != nil || NSApp.appearance != nil else { return }
     NSApp.appearance = desired
@@ -904,7 +919,7 @@ final class AwakeController: ObservableObject {
 }
 
 #if DEBUG
-  extension AwakeController.PreviewState {
+  extension AwakeSessionManager.PreviewState {
     /// Builds a preview state with no active session.
     /// - Returns: An idle preview state.
     static func idle() -> Self {
@@ -943,7 +958,7 @@ final class AwakeController: ObservableObject {
       remaining: TimeInterval,
       sessionDuration: TimeInterval,
       keepsDisplayAwake: Bool = true,
-      policyState: AwakeController.ManagedPolicyState? = nil,
+      policyState: AwakeSessionManager.ManagedPolicyState? = nil,
       powerAssertionIsActive: Bool = true,
       assertionErrorMessage: String? = nil,
       ipcSessions: [String: IPCSession] = [:]

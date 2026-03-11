@@ -4,7 +4,7 @@
 
 Awake reads enterprise and MDM-managed device policies from macOS managed preference files to warn users about restrictions that may interrupt their awake session. Even when a power assertion is active, managed policies such as screen saver timeouts, password-after-screensaver requirements, and auto-logout delays are enforced by the operating system independently. Awake surfaces these conflicts as a warning notice so users understand what may still interrupt their session.
 
-The policy detection system lives in `Sources/AwakeUI/AwakeController.swift` and is represented by the `ManagedPolicyState` struct nested inside `AwakeController`.
+The policy detection system lives in `Sources/AwakeUI/AwakeSessionManager.swift` and is represented by the `ManagedPolicyState` struct nested inside `AwakeSessionManager`.
 
 ## Policy Source Files
 
@@ -85,7 +85,7 @@ Both helpers return `nil` — not a default — when a key is absent, so callers
 
 ## Refresh Throttle
 
-Policy state is not reloaded on every clock tick. Instead, `AwakeController` stores a `lastPolicyRefresh: Date` timestamp initialized to `Date.distantPast`. The private method `refreshManagedPolicyState(force:)` enforces a minimum 60-second interval between reloads:
+Policy state is not reloaded on every clock tick. Instead, `AwakeSessionManager` stores a `lastPolicyRefresh: Date` timestamp initialized to `Date.distantPast`. The private method `refreshManagedPolicyState(force:)` enforces a minimum 60-second interval between reloads:
 
 ```swift
 private func refreshManagedPolicyState(force: Bool = false) {
@@ -104,7 +104,7 @@ This design keeps file I/O infrequent while ensuring policy changes (such as an 
 
 ## ManagedPolicyState
 
-`ManagedPolicyState` is a struct nested inside `AwakeController`, defined in `Sources/AwakeUI/AwakeController.swift`.
+`ManagedPolicyState` is a struct nested inside `AwakeSessionManager`, defined in `Sources/AwakeUI/AwakeSessionManager.swift`.
 
 ```swift
 struct ManagedPolicyState {
@@ -141,7 +141,7 @@ It reads the four plist files described in the Policy Source Files section, merg
 
 ## BehaviorPolicyNotice
 
-`BehaviorPolicyNotice` is a struct nested inside `AwakeController` used to carry human-readable warning text to the UI:
+`BehaviorPolicyNotice` is a struct nested inside `AwakeSessionManager` used to carry human-readable warning text to the UI:
 
 ```swift
 struct BehaviorPolicyNotice {
@@ -151,7 +151,7 @@ struct BehaviorPolicyNotice {
 }
 ```
 
-The computed property `behaviorPolicyNotice` on `AwakeController` builds a `BehaviorPolicyNotice?`, returning `nil` when `managedPolicyState.hasRelevantWarnings` is `false`.
+The computed property `behaviorPolicyNotice` on `AwakeSessionManager` builds a `BehaviorPolicyNotice?`, returning `nil` when `managedPolicyState.hasRelevantWarnings` is `false`.
 
 **Title logic:**
 
@@ -169,7 +169,7 @@ The computed property `behaviorPolicyNotice` on `AwakeController` builds a `Beha
 - `screenSaverIdleTime` is set: explains the interaction with the current `sleepBehavior` (keepDisplayAwake vs allowDisplaySleep).
 - `loginWindowIdleTime` is set: warns that if the Mac returns to the login window, the login screen saver can start after the configured timeout.
 
-The `behaviorPolicyNotice` property is defined in `Sources/AwakeUI/AwakeController.swift` and consumed by the UI layer to render a warning card when `known` or `possible` entries are present.
+The `behaviorPolicyNotice` property is defined in `Sources/AwakeUI/AwakeSessionManager.swift` and consumed by the UI layer to render a warning card when `known` or `possible` entries are present.
 
 ## Diagnostic Script
 

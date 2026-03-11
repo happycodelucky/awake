@@ -107,10 +107,10 @@ IPC sessions are capped at **86,400 seconds (24 hours)**. If a caller requests a
 | File | Role |
 |------|------|
 | `Sources/AwakeUI/IPCSession.swift` | `Codable` value type representing a named session. |
-| `Sources/AwakeUI/AwakeController.swift` | Session registry (`ipcSessions`), effective-state computation, activate/deactivate/prune methods, persistence. |
+| `Sources/AwakeUI/AwakeSessionManager.swift` | Session registry (`ipcSessions`), effective-state computation, activate/deactivate/prune methods, persistence. |
 | `Sources/AwakeUI/IPCSessionListView.swift` | SwiftUI view rendering the session list card in the popover. |
 | `Sources/AwakeMenuBarApp/AwakeURL.swift` | Pure URL parser (`parseAwakeURL`) returning typed `AwakeURLCommand`. |
-| `Sources/AwakeMenuBarApp/AwakeMenuBarApp.swift` | `onOpenURL` handler dispatching parsed commands to `AwakeController`. |
+| `Sources/AwakeMenuBarApp/AwakeMenuBarApp.swift` | `onOpenURL` handler dispatching parsed commands to `AwakeSessionManager`. |
 | `scripts/bundle_app.sh` | Info.plist `CFBundleURLTypes` registration. |
 
 ### Persistence Format
@@ -119,7 +119,7 @@ IPC sessions are stored in `UserDefaults.standard` under the key `"awake.ipcSess
 
 ### Effective State Derivation
 
-`AwakeController` computes three derived values from the merged session state:
+`AwakeSessionManager` computes three derived values from the merged session state:
 
 - `effectiveEndDate` — `max(appSession.endDate, max(ipcSessions.map(\.endDate)))`, or `nil` if no session is active.
 - `effectiveRemaining` — seconds until `effectiveEndDate`, or paused remaining if the app session is paused.

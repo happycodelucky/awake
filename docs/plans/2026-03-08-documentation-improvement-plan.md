@@ -53,18 +53,18 @@ independently from the app lifecycle.
 
 | File | Role |
 |------|------|
-| `AwakeController.swift` | Timer lifecycle, IOKit power assertions, managed policy loading, UserDefaults persistence |
+| `AwakeSessionManager.swift` | Timer lifecycle, IOKit power assertions, managed policy loading, UserDefaults persistence |
 | `MenuContentView.swift` | Menu bar popover layout — presets grid, behavior toggle, policy warnings, update notices |
 | `AppUpdater.swift` | Wraps Sparkle's `SPUUpdater` and `SPUUserDriver` into observable `UpdateNotice` state |
 | `Components.swift` | Reusable views — `TimerHeroView`, `CircleActionIcon`, `PolicyWarningCard`, `UpdateNoticeCard` |
 | `Styles.swift` | Custom `ButtonStyle` implementations for presets, footer, and update card actions |
 | `RacetrackRingShape.swift` | Custom `InsettableShape` that draws the rounded racetrack used by the timer ring |
-| `AwakeMenuBarApp.swift` | `@main` entry point — creates `AwakeController` and `AppUpdater`, hosts `MenuBarExtra` scene |
+| `AwakeMenuBarApp.swift` | `@main` entry point — creates `AwakeSessionManager` and `AppUpdater`, hosts `MenuBarExtra` scene |
 
 ## Data Flow
 
 ```
-User taps preset → AwakeController.start(minutes:)
+User taps preset → AwakeSessionManager.start(minutes:)
   → sets endDate, sessionDuration
   → saveState() persists to UserDefaults
   → syncPowerAssertion() acquires IOKit assertion
@@ -362,7 +362,7 @@ git commit -m "Docs: add documentation maintenance rules to AGENTS.md"
 ### Task 11: Add file-level headers and `AGENT:` comments to source files
 
 **Files:**
-- Modify: `Sources/AwakeUI/AwakeController.swift:1-6`
+- Modify: `Sources/AwakeUI/AwakeSessionManager.swift:1-6`
 - Modify: `Sources/AwakeUI/MenuContentView.swift:1-3`
 - Modify: `Sources/AwakeUI/AppUpdater.swift:1-2`
 - Modify: `Sources/AwakeUI/Components.swift:1`
@@ -373,10 +373,10 @@ git commit -m "Docs: add documentation maintenance rules to AGENTS.md"
 **Step 1: Add file-level documentation headers**
 
 Add a file-level `///` comment block at the top of each source file describing
-its role in the architecture. Example for `AwakeController.swift`:
+its role in the architecture. Example for `AwakeSessionManager.swift`:
 
 ```swift
-// MARK: - AwakeController
+// MARK: - AwakeSessionManager
 // Core timer lifecycle, IOKit power assertions, and managed policy detection.
 // This is the central state object observed by all UI views.
 ```
@@ -385,21 +385,21 @@ its role in the architecture. Example for `AwakeController.swift`:
 
 Key locations to add `AGENT:` markers:
 
-- `AwakeController.swift:153` — `nonisolated(unsafe)` on `clockTimer`:
+- `AwakeSessionManager.swift:153` — `nonisolated(unsafe)` on `clockTimer`:
   ```swift
   // AGENT: clockTimer is nonisolated(unsafe) because Timer.scheduledTimer
   // requires a non-isolated context, but the callback dispatches back to
   // @MainActor via Task. The timer is only mutated in init/deinit.
   ```
 
-- `AwakeController.swift:155` — `lastPolicyRefresh` throttle:
+- `AwakeSessionManager.swift:155` — `lastPolicyRefresh` throttle:
   ```swift
   // AGENT: Policy refresh is throttled to 60s because reading plist files
   // from /Library/Managed Preferences on every clock tick (1s) would cause
   // unnecessary disk I/O. 60s balances freshness with performance.
   ```
 
-- `AwakeController.swift:156-160` — UserDefaults key naming:
+- `AwakeSessionManager.swift:156-160` — UserDefaults key naming:
   ```swift
   // AGENT: UserDefaults keys use the "awake." prefix to namespace them within
   // the app's defaults domain and avoid collisions with system or framework keys.
@@ -438,7 +438,7 @@ git commit -m "Docs: add file headers and AGENT rationale comments to source fil
 ### Task 12: Improve mechanical comments in source files
 
 **Files:**
-- Modify: `Sources/AwakeUI/AwakeController.swift`
+- Modify: `Sources/AwakeUI/AwakeSessionManager.swift`
 - Modify: `Sources/AwakeUI/MenuContentView.swift`
 - Modify: `Sources/AwakeUI/Components.swift`
 - Modify: `Sources/AwakeUI/Styles.swift`
@@ -448,7 +448,7 @@ git commit -m "Docs: add file headers and AGENT rationale comments to source fil
 Scan for comments that merely restate the code and replace them with
 behavior/constraint explanations. Examples:
 
-- `AwakeController.swift` — `startClock()` comment "Starts the one-second timer"
+- `AwakeSessionManager.swift` — `startClock()` comment "Starts the one-second timer"
   → "Starts the one-second timer that advances session state, checks for
   expiration, and throttles policy refreshes. The timer is added to `.common`
   run loop mode so it fires during modal tracking."

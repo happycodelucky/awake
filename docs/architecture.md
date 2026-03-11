@@ -10,7 +10,7 @@ Awake is a macOS menu bar utility that prevents the system from sleeping for a u
 
 Key characteristics:
 
-- **Menu bar only.** The entire UI is a `MenuBarExtra` window popover — no regular app windows.
+- **Menu bar only.** The entire UI is an `NSPopover` attached to an `NSStatusItem` — no regular app windows. The popover hosts a SwiftUI `MenuContentView` via `NSHostingController`.
 - **Timer-driven.** A one-second repeating `Timer` ticks on the main run loop, advancing `@Published` state that SwiftUI observes directly.
 - **IOKit power assertions.** Two assertion types cover two distinct sleep behaviors: one that also blocks display sleep and one that allows it.
 - **Managed policy awareness.** At launch and on a 60-second throttle thereafter, the controller reads `/Library/Managed Preferences` plists to detect MDM-enforced screensaver, lock, and auto-logout policies that Awake cannot override. When relevant policies are found, a warning card surfaces in the UI.
@@ -47,10 +47,10 @@ All source files are in `Sources/Awake/`. There are no cross-module `public` acc
 | Dependency | Version | How it is used |
 |---|---|---|
 | [Sparkle](https://github.com/sparkle-project/Sparkle) | `>= 2.8.0` (resolved: 2.9.0) | Automatic update checking and installation. `AppUpdater` wraps `SPUUpdater` and `SPUUserDriver`. Active only when `SUFeedURL` and `SUPublicEDKey` are present in the app bundle's Info.plist; the wrapper silently disables itself otherwise. |
-| IOKit (`IOKit.pwr_mgt`) | System | `IOPMAssertionCreateWithName` / `IOPMAssertionRelease` for power assertions. Imported in `AwakeController.swift`. |
-| ServiceManagement (`SMAppService`) | System | Login item registration. `SMAppService.mainApp.register()` / `.unregister()` in `AwakeController.setLaunchAtLogin(_:)`. |
+| IOKit (`IOKit.pwr_mgt`) | System | `IOPMAssertionCreateWithName` / `IOPMAssertionRelease` for power assertions. Imported in `AwakeSessionManager.swift`. |
+| ServiceManagement (`SMAppService`) | System | Login item registration. `SMAppService.mainApp.register()` / `.unregister()` in `AwakeSessionManager.setLaunchAtLogin(_:)`. |
 | AppKit | System | `NSApplication`, `NSEvent` (modifier key monitoring in `MenuContentView`), and `NSUserName()` (managed policy user path). |
-| SwiftUI | System | All views and the `MenuBarExtra` scene. |
+| SwiftUI | System | All views. Hosted in the `NSPopover` via `NSHostingController`. |
 | Foundation | System | `Timer`, `UserDefaults`, `PropertyListSerialization`, `URL`, `Date`, `TimeInterval`. |
 
 ---
@@ -61,8 +61,8 @@ All source files live in `Sources/Awake/`.
 
 | File | Primary types | Role |
 |---|---|---|
-| `AwakeMenuBarApp.swift` | `AwakeMenuBarApp`, `AwakeAppDelegate` | `@main` App entry point. `AwakeAppDelegate` owns `AwakeController`, intercepts `awake://` URLs via `NSApplicationDelegate`, and exposes `@Published var menuBarState` driven by a 1-second `Timer` to keep the menu bar label in sync. `AwakeMenuBarApp` sets activation policy to `.accessory`, owns `AppUpdater` as a `@StateObject`, and declares the `MenuBarExtra` scene. |
-| `AwakeController.swift` | `AwakeController`, `ManagedPolicyState`, `BehaviorPolicyNotice`, `SleepBehavior`, `AppearanceMode` | Central `@MainActor ObservableObject`. Owns the one-second clock timer, IOKit power assertions, session lifecycle (`start`, `pause`, `resume`, `stop`), IPC session registry (`ipcSessions`), effective-state computation, `UserDefaults` persistence (`saveState` / `restoreSavedState` / `saveIPCSessions` / `restoreIPCSessions`), managed policy loading, login item registration (`SMAppService`), and appearance mode management. All `@Published` properties drive the SwiftUI layer. |
+| `AwakeMenuBarApp.swift` | `AwakeMenuBarApp`, `AwakeAppDelegate` | `@main` App entry point. `AwakeAppDelegate` owns the `NSStatusItem` and `NSPopover`, intercepts `awake://` URLs, and drives the status item button image by subscribing to `AwakeSessionManager.shared.objectWillChange`. `AwakeMenuBarApp` sets activation policy to `.accessory` and provides an empty `Settings` scene (required by SwiftUI). |
+| `AwakeSessionManager.swift` | `AwakeSessionManager`, `ManagedPolicyState`, `BehaviorPolicyNotice`, `SleepBehavior`, `AppearanceMode` | Central `@MainActor ObservableObject`. Owns the one-second clock timer, IOKit power assertions, session lifecycle (`start`, `pause`, `resume`, `stop`), IPC session registry (`ipcSessions`), effective-state computation, `UserDefaults` persistence (`saveState` / `restoreSavedState` / `saveIPCSessions` / `restoreIPCSessions`), managed policy loading, login item registration (`SMAppService`), and appearance mode management. All `@Published` properties drive the SwiftUI layer. |
 | `IPCSession.swift` | `IPCSession` | `Codable` value type representing a named IPC awake session with id, label, end date, and created date. Provides remaining-time and active-check helpers. |
 | `IPCSessionListView.swift` | `IPCSessionListView` | SwiftUI card view listing active IPC sessions below the timer hero. Each row shows the session label, compact remaining time, and a deactivate button. Renders as a tight `VStack` for 7 or fewer sessions, or wraps in a `ScrollView` when more. |
 | `MenuContentView.swift` | `MenuContentView`, `ModifierKeyObserver` | Root SwiftUI view rendered inside the `MenuBarExtra` window. Composes the header badge, `TimerHeroView`, `IPCSessionListView` (when IPC sessions are active), `UpdateNoticeCard`, preset grid, `PolicyWarningCard`, and quit button. Toggles between main timer controls and a settings panel via `@State showingSettings`. `ModifierKeyObserver` tracks the Option key so the action button toggles between primary and alternate actions. |
@@ -93,15 +93,15 @@ clockTimer fires every 1 second (on RunLoop.main in .common mode)
   → if endDate <= now: stop()
       → saveState(), syncPowerAssertion() → IOPMAssertionRelease(...)
 
-SwiftUI observes @Published properties on AwakeController:
+SwiftUI observes @Published properties on AwakeSessionManager:
   now, endDate, sessionDuration, pausedRemaining,
   powerAssertionIsActive, sleepBehavior, managedPolicyState
   → MenuContentView body re-evaluates
   → TimerHeroView receives updated progress and timeText
-  → AwakeMenuBarApp label receives menuBarClockText and powerAssertionIsActive
+  → AwakeAppDelegate.managerSink fires, updateStatusItemImage() composites and sets NSStatusItem button image
 ```
 
-`AwakeController` is `@MainActor`. All mutations happen on the main actor. The `clockTimer` callback dispatches back to `MainActor` via `Task { @MainActor in ... }` because `Timer` callbacks run on whatever thread schedules them.
+`AwakeSessionManager` is `@MainActor`. All mutations happen on the main actor. The `clockTimer` callback dispatches back to `MainActor` via `Task { @MainActor in ... }` because `Timer` callbacks run on whatever thread schedules them.
 
 ---
 
@@ -165,7 +165,7 @@ Assertion lifecycle:
 | `autoLogoutDelay` | `com.apple.loginwindow` | `autoLogoutDelay` | Seconds of inactivity before the user is auto-logged out. Triggers a warning if non-nil. |
 | `com.apple.login.mcx.DisableAutoLoginClient` | `com.apple.loginwindow` | `disablesAutoLogin` | Indicates whether automatic login is disabled by policy. |
 
-`ManagedPolicyState.hasRelevantWarnings` is `true` when any of `screenSaverIdleTime`, `asksForPasswordAfterScreenSaver`, or `autoLogoutDelay` is set. Only when this is `true` does `AwakeController.behaviorPolicyNotice` return a non-nil `BehaviorPolicyNotice`, which `MenuContentView` uses to show `PolicyWarningCard`.
+`ManagedPolicyState.hasRelevantWarnings` is `true` when any of `screenSaverIdleTime`, `asksForPasswordAfterScreenSaver`, or `autoLogoutDelay` is set. Only when this is `true` does `AwakeSessionManager.behaviorPolicyNotice` return a non-nil `BehaviorPolicyNotice`, which `MenuContentView` uses to show `PolicyWarningCard`.
 
 Policy state is loaded once at launch (forced) and then refreshed on a 60-second throttle inside the `clockTimer` callback.
 
@@ -178,7 +178,7 @@ Awake registers the `awake` custom URL scheme (`CFBundleURLTypes` in Info.plist)
 - `awake://activate?session=<id>&label=<name>&duration=<seconds>` — creates or refreshes a named session.
 - `awake://deactivate?session=<id>` — removes a named session.
 
-**Session registry.** `AwakeController` maintains an `ipcSessions: [String: IPCSession]` dictionary alongside the existing app session state. Each `IPCSession` is a `Codable` value type storing `id`, `label`, `endDate`, and `createdDate`.
+**Session registry.** `AwakeSessionManager` maintains an `ipcSessions: [String: IPCSession]` dictionary alongside the existing app session state. Each `IPCSession` is a `Codable` value type storing `id`, `label`, `endDate`, and `createdDate`.
 
 **Effective state.** Three computed properties merge the app session and IPC sessions:
 
@@ -188,7 +188,7 @@ Awake registers the `awake` custom URL scheme (`CFBundleURLTypes` in Info.plist)
 
 All UI-facing properties (`isActive`, `progress`, `menuBarClockText`, `formattedRemaining()`) read from these effective values.
 
-**URL handling.** `AwakeMenuBarApp` uses SwiftUI's `onOpenURL` modifier to receive URL events. The pure parser `parseAwakeURL(_:)` in `AwakeURL.swift` validates and extracts typed `AwakeURLCommand` values, which are dispatched to `AwakeController.activateIPCSession(id:label:duration:)` or `deactivateIPCSession(id:)`.
+**URL handling.** `AwakeAppDelegate.application(_:open:)` receives URL events via AppKit's kAEGetURL Apple Event path. The pure parser `parseAwakeURL(_:)` in `AwakeURL.swift` validates and extracts typed `AwakeURLCommand` values, which are dispatched to `AwakeSessionManager.shared.activateIPCSession(id:label:duration:)` or `deactivateIPCSession(id:)`.
 
 **Persistence.** IPC sessions are stored as a JSON array in `UserDefaults` under `"awake.ipcSessions"` with `secondsSince1970` date encoding. They are restored at launch and pruned every second by the clock timer.
 

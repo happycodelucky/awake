@@ -1,210 +1,201 @@
 // MARK: - AwakeMenuBarApp
-// App entry point — creates AwakeController and AppUpdater, hosts the
-// MenuBarExtra scene. Runs as an accessory (no Dock icon).
+// App entry point. Owns the NSStatusItem (menu bar icon) and NSPopover
+// (SwiftUI content panel). Runs as an accessory app — no Dock icon.
 
 import AppKit
+import Combine
 import SwiftUI
 import os
 
 // MARK: - App delegate
 
-// AGENT: On macOS 26 (Tahoe), SwiftUI's onOpenURL does not fire for
-// MenuBarExtra-only apps (apps with no regular window scene). The Apple Event
-// for kAEGetURL (URL scheme open) is delivered to NSApplicationDelegate but
-// SwiftUI does not bridge it through to onOpenURL in this configuration.
+// AGENT: URL handling — SwiftUI's onOpenURL / .handlesExternalEvents require
+// a window scene. In a MenuBarExtra-only or statusItem-only app they are
+// no-ops and produce a warning. All URL routing is done via
+// NSApplicationDelegate.application(_:open:) (AppKit's kAEGetURL path).
 //
-// We use NSApplicationDelegateAdaptor to intercept URL events at the AppKit
-// layer. The delegate owns the AwakeController and conforms to ObservableObject
-// so the App struct observes it via @NSApplicationDelegateAdaptor.
+// AGENT: Menu bar icon update — the previous approach used SwiftUI's
+// MenuBarExtra with an Image label and tried to drive re-renders via
+// @Published + objectWillChange forwarding. SwiftUI's App struct body is
+// not a View; its SceneBuilder label closure does not re-evaluate reliably
+// when an @ObservedObject fires. The fix is to own the NSStatusItem directly
+// and update its button image imperatively from a Combine sink. This is
+// synchronous, immediate, and has no SwiftUI diffing in the path.
 //
-// AGENT: @MainActor is required because AwakeController is @MainActor-isolated.
-// NSApplicationDelegate methods are always called on the main thread on macOS,
-// so marking the class @MainActor is safe and correct here.
-//
-// AGENT: The menu bar label update problem —
-//   AwakeController is @Published-based, but @Published on a nested reference
-//   type does not automatically propagate through to the App struct's body.
-//   SwiftUI's App struct is not a View; its body is only re-evaluated when
-//   an @ObservedObject or @StateObject it reads fires objectWillChange.
-//   @NSApplicationDelegateAdaptor wraps the delegate as @ObservedObject when
-//   the delegate conforms to ObservableObject. So if the delegate fires
-//   objectWillChange, the App body re-runs and recomputes the menu bar image.
-//
-//   We expose menuBarState — a value that changes whenever the menu bar label
-//   needs to redraw — as a @Published property on the delegate. The clock
-//   timer in AwakeController drives now every second; we react to it via
-//   applicationDidFinishLaunching by starting our own 1-second timer that
-//   snapshots the relevant controller state into menuBarState. This is simpler
-//   and more reliable than Combine forwarding because it avoids the
-//   objectWillChange-before-mutation timing constraint entirely.
+// AGENT: Popover — NSPopover hosting an NSHostingController<MenuContentView>
+// gives us full SwiftUI inside the panel while keeping AppKit in control of
+// show/hide. The popover is attached to the status item button, which is the
+// standard macOS pattern for menu bar utilities.
 @MainActor
 final class AwakeAppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
-  // AGENT: The delegate owns the controller so it exists before any URL event.
-  let controller = AwakeController()
 
-  // AGENT: menuBarState is a @Published snapshot of the two values that drive
-  // the menu bar label: the icon name and optional clock text. Publishing a
-  // simple struct here avoids needing to forward the entire controller's
-  // objectWillChange, which has subtle timing issues in the App struct context.
-  @Published private(set) var menuBarState = MenuBarState(iconName: "mug", clockText: nil)
+  // MARK: - Owned objects
 
-  // AGENT: nonisolated(unsafe) because Timer.scheduledTimer requires a non-
-  // isolated context. The timer is only written in applicationDidFinishLaunching
-  // and invalidated in deinit — no concurrent mutation occurs.
-  nonisolated(unsafe) private var labelTimer: Timer?
+  /// Status item in the system menu bar.
+  private var statusItem: NSStatusItem?
 
-  /// Snapshot of the values needed to render the menu bar label image.
-  struct MenuBarState: Equatable {
-    let iconName: String
-    let clockText: String?
-  }
+  /// Popover that hosts the SwiftUI menu content panel.
+  private var popover: NSPopover?
 
-  /// Called by AppKit when the app has finished launching. Starts the label
-  /// refresh timer that keeps the menu bar image in sync with the controller.
+  /// Hosting controller for the SwiftUI content inside the popover.
+  private var hostingController: NSHostingController<AnyView>?
+
+  /// App updater state observed by the menu content view.
+  private let updater = AppUpdater()
+
+  // AGENT: sink must be stored; if it goes out of scope the subscription
+  // is cancelled and the icon stops updating.
+  private var managerSink: AnyCancellable?
+
+  // MARK: - NSApplicationDelegate
+
+  /// Sets up the status item, popover, and Combine observation on launch.
   func applicationDidFinishLaunching(_ notification: Notification) {
-    // Snapshot immediately so the menu bar shows the correct state on launch.
-    snapshotMenuBarState()
-    // Refresh the snapshot every second to match the controller's clock tick.
-    // AGENT: This timer drives menu bar label redraws. It fires separately
-    // from AwakeController's internal clock so that the App struct always
-    // has an up-to-date @Published value to observe.
-    labelTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-      Task { @MainActor [weak self] in self?.snapshotMenuBarState() }
+    // Apply saved appearance before anything renders.
+    // AGENT: Must be after NSApplicationMain — NSApp is nil before this point.
+    AwakeSessionManager.shared.applyAppearance()
+
+    setupStatusItem()
+    setupPopover()
+
+    // Drive the icon image from the manager's published state.
+    // AGENT: objectWillChange fires *before* the @Published property is
+    // written. DispatchQueue.main.async defers the icon update to after
+    // the current run-loop iteration, by which point all mutations have
+    // been applied. This is the same async-hop pattern used for any
+    // "read-after-willChange" scenario.
+    managerSink = AwakeSessionManager.shared.objectWillChange.sink { [weak self] _ in
+      DispatchQueue.main.async { self?.updateStatusItemImage() }
     }
-    RunLoop.main.add(labelTimer!, forMode: .common)
+
+    // Set initial icon state.
+    updateStatusItemImage()
   }
 
-  /// Updates menuBarState from the current controller state, publishing a
-  /// change only when the values actually differ (Equatable comparison).
-  private func snapshotMenuBarState() {
-    let newState = MenuBarState(
-      iconName: controller.powerAssertionIsActive ? "mug.fill" : "mug",
-      clockText: controller.hasSession ? controller.menuBarClockText : nil
-    )
-    if newState != menuBarState {
-      menuBarState = newState
-    }
-  }
+  // MARK: - URL handling
 
-  /// Called by AppKit when the app receives a URL to open (kAEGetURL Apple Event).
-  /// This fires for both cold launch (URL queued before app started) and
-  /// hot open (URL delivered to running instance).
+  /// Routes `awake://` URLs to the session manager. Called by AppKit for
+  /// both cold-launch (URL queued before app started) and hot-open events.
   func application(_ application: NSApplication, open urls: [URL]) {
-    ipcLog.info("AppDelegate.application(_:open:) received \(urls.count) URL(s)")
+    ipcLog.info("AppDelegate: received \(urls.count) URL(s)")
     for url in urls {
       ipcLog.info("URL: \(url.absoluteString, privacy: .public)")
       guard let command = parseAwakeURL(url) else {
-        ipcLog.warning("AppDelegate.application(_:open:): unrecognized or malformed URL — ignored")
+        ipcLog.warning("AppDelegate: unrecognized or malformed URL — ignored")
         continue
       }
-      // AGENT: Since the class is @MainActor, we are already on the main actor
-      // here. No Task dispatch needed.
       switch command {
       case .activate(let id, let label, let duration):
-        ipcLog.info("AppDelegate: activate session=\(id, privacy: .public) label=\(label, privacy: .public) duration=\(duration)")
-        controller.activateIPCSession(id: id, label: label, duration: duration)
-        // Snapshot immediately so the menu bar updates without waiting for the
-        // next timer tick (which could be up to 1 second away).
-        snapshotMenuBarState()
+        ipcLog.info("AppDelegate: activate id=\(id, privacy: .public) label=\(label, privacy: .public) duration=\(duration)")
+        AwakeSessionManager.shared.activateIPCSession(id: id, label: label, duration: duration)
       case .deactivate(let id):
-        ipcLog.info("AppDelegate: deactivate session=\(id, privacy: .public)")
-        controller.deactivateIPCSession(id: id)
-        snapshotMenuBarState()
+        ipcLog.info("AppDelegate: deactivate id=\(id, privacy: .public)")
+        AwakeSessionManager.shared.deactivateIPCSession(id: id)
       }
+    }
+  }
+
+  // MARK: - Status item
+
+  /// Creates the `NSStatusItem` and wires its button click to toggle the popover.
+  private func setupStatusItem() {
+    let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    item.button?.target = self
+    item.button?.action = #selector(togglePopover(_:))
+    item.button?.sendAction(on: [.leftMouseDown, .rightMouseDown])
+    statusItem = item
+  }
+
+  /// Updates the status item button image to reflect the current session state.
+  ///
+  /// Called immediately on launch and after every manager state change via the
+  /// Combine sink. Reads directly from `AwakeSessionManager.shared`.
+  private func updateStatusItemImage() {
+    let manager = AwakeSessionManager.shared
+    let iconName = manager.powerAssertionIsActive ? "mug.fill" : "mug"
+    let clockText = manager.hasSession ? manager.menuBarClockText : nil
+    let image = compositeMenuBarImage(iconName: iconName, badgeText: clockText)
+    statusItem?.button?.image = image
+  }
+
+  // MARK: - Popover
+
+  /// Creates the `NSPopover` containing the SwiftUI menu content.
+  private func setupPopover() {
+    let manager = AwakeSessionManager.shared
+    // AGENT: AnyView wrapping avoids the generic parameter leaking into the
+    // stored hostingController type. The content view observes the manager
+    // directly as @ObservedObject, so it re-renders on all @Published changes.
+    let contentView = AnyView(MenuContentView(manager: manager, updater: updater))
+    let hosting = NSHostingController(rootView: contentView)
+    hosting.sizingOptions = .preferredContentSize
+    hostingController = hosting
+
+    let pop = NSPopover()
+    pop.contentViewController = hosting
+    pop.behavior = .transient
+    pop.animates = true
+    popover = pop
+  }
+
+  /// Toggles the popover open or closed relative to the status item button.
+  @objc private func togglePopover(_ sender: AnyObject?) {
+    guard let button = statusItem?.button, let popover else { return }
+    if popover.isShown {
+      popover.performClose(sender)
+    } else {
+      popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+      // Bring the popover's window to front so key events (e.g. Option key
+      // monitoring) work correctly when the popover is first opened.
+      popover.contentViewController?.view.window?.makeKey()
     }
   }
 }
 
-// MARK: - App struct
+// MARK: - App entry point
 
-/// Hosts the menu bar extra and shared observable app state.
+/// Configures the process and installs the app delegate.
+///
+/// Uses `@NSApplicationDelegateAdaptor` so AppKit manages delegate lifetime.
+/// No `MenuBarExtra` scene — the status item and popover are owned by the
+/// delegate directly.
 @main
 struct AwakeMenuBarApp: App {
-  // AGENT: @NSApplicationDelegateAdaptor wraps the delegate as @ObservedObject
-  // when the delegate conforms to ObservableObject. The App struct body
-  // re-evaluates whenever the delegate's @Published menuBarState changes,
-  // which recomputes the menu bar label image.
   @NSApplicationDelegateAdaptor(AwakeAppDelegate.self) private var appDelegate
-  @StateObject private var updater = AppUpdater()
 
-  // AGENT: setActivationPolicy(.accessory) hides the app from the Dock and
-  // Cmd-Tab switcher. This is standard for menu bar-only utilities. The
-  // Info.plist also sets LSUIElement=true as a fallback.
-  /// Configures the process to run as an accessory app without a Dock icon.
+  /// Hides the app from the Dock and Cmd-Tab switcher on startup.
+  // AGENT: LSUIElement=true in Info.plist covers the initial launch moment
+  // before this init runs. setActivationPolicy(.accessory) is belt-and-suspenders.
   init() {
     NSApplication.shared.setActivationPolicy(.accessory)
   }
 
-  /// The controller is owned by the app delegate to ensure it exists before
-  /// the first URL open event fires. The App struct accesses it via the delegate.
-  private var controller: AwakeController { appDelegate.controller }
-
-  /// Builds the menu bar scene for the app.
+  /// An empty scene body — all UI is driven by the AppDelegate's NSStatusItem
+  /// and NSPopover. SwiftUI requires at least one scene, so we provide a no-op.
+  // AGENT: Settings scene would go here if we ever need a standalone window.
   var body: some Scene {
-    MenuBarExtra {
-      MenuContentView(controller: controller, updater: updater)
-        // AGENT: onOpenURL is kept here as a secondary handler for forward
-        // compatibility. On macOS versions where it does fire for MenuBarExtra,
-        // it routes the URL. On macOS 26, AppDelegate.application(_:open:) is
-        // the primary path. The two handlers are idempotent — an activate for
-        // the same session ID is a no-op replacement.
-        .onOpenURL { url in
-          ipcLog.info("onOpenURL received: \(url.absoluteString, privacy: .public)")
-          guard let command = parseAwakeURL(url) else {
-            ipcLog.warning("onOpenURL: unrecognized or malformed URL — ignored")
-            return
-          }
-          switch command {
-          case .activate(let id, let label, let duration):
-            ipcLog.info("onOpenURL: activate session=\(id, privacy: .public) label=\(label, privacy: .public) duration=\(duration)")
-            controller.activateIPCSession(id: id, label: label, duration: duration)
-          case .deactivate(let id):
-            ipcLog.info("onOpenURL: deactivate session=\(id, privacy: .public)")
-            controller.deactivateIPCSession(id: id)
-          }
-        }
-    } label: {
-      // AGENT: MenuBarExtra only renders Image and Text views in its label.
-      // Custom views (HStack, Canvas, styled views) are silently ignored.
-      // We composite the icon + pill badge into a single NSImage instead.
-      Image(nsImage: menuBarImage)
-    }
-    .menuBarExtraStyle(.window)
-  }
-
-  // MARK: - Composited menu bar image
-
-  /// Builds a composited NSImage containing the mug icon and optional countdown pill.
-  /// Reads from appDelegate.menuBarState, a @Published value that changes every
-  /// second (via the delegate's label timer), so the App body re-evaluates here.
-  private var menuBarImage: NSImage {
-    compositeMenuBarImage(
-      iconName: appDelegate.menuBarState.iconName,
-      badgeText: appDelegate.menuBarState.clockText,
-    )
+    // Intentionally empty — status item + popover are managed by AwakeAppDelegate.
+    Settings { EmptyView() }
   }
 }
 
-// MARK: - IPC Logging
+// MARK: - IPC logging
 
-/// Shared logger for URL scheme IPC dispatch events. Subsystem matches the
-/// bundle ID so Console.app and `log stream` can filter by subsystem + category.
-private let ipcLog = Logger(subsystem: "com.akkio.apps.awake", category: "ipc")
+/// Shared logger for URL scheme IPC dispatch events.
+private let ipcLog = Logger(subsystem: "com.happycodelucky.apps.awake", category: "ipc")
 
 // MARK: - Menu bar image compositing
 
 /// Composites an SF Symbol icon and optional pill badge into a single NSImage
-/// suitable for use as a MenuBarExtra label.
+/// suitable for use as a menu bar status item image.
 ///
 /// - Parameters:
-///   - iconName: SF Symbol name for the icon (e.g. "mug" or "mug.fill").
-///   - iconColor: Tint color applied to the icon.
-///   - badgeText: Optional countdown text displayed inside a pill. Pass nil to omit the badge.
-///   - pillColor: Background color of the pill. Required when `badgeText` is non-nil.
-/// - Returns: A composited NSImage sized for the menu bar.
+///   - iconName: SF Symbol name for the icon (e.g. `"mug"` or `"mug.fill"`).
+///   - badgeText: Optional countdown text displayed inside a pill. Pass `nil` to omit.
+/// - Returns: A composited `NSImage` sized for the menu bar.
 private func compositeMenuBarImage(
   iconName: String,
-  badgeText: String?,
+  badgeText: String?
 ) -> NSImage {
   let iconHeight: CGFloat = 16
   let spacing: CGFloat = 4
@@ -212,9 +203,9 @@ private func compositeMenuBarImage(
   let vPad: CGFloat = 2
 
   // --- Icon ---
-  // AGENT: We use NSImage(systemSymbolName:) with a point-size configuration
-  // to get a consistently sized SF Symbol. The image is drawn tinted by
-  // setting the icon color as fill before drawing.
+  // AGENT: NSImage(systemSymbolName:) with a point-size configuration gives a
+  // consistently sized SF Symbol. Template images respect menu bar vibrancy
+  // automatically; we composite them with labelColor to match system style.
   let symbolConfig = NSImage.SymbolConfiguration(pointSize: iconHeight, weight: .regular)
   let rawIcon = NSImage(systemSymbolName: iconName, accessibilityDescription: "Awake")?
     .withSymbolConfiguration(symbolConfig) ?? NSImage()
@@ -232,25 +223,25 @@ private func compositeMenuBarImage(
     ]
     let str = NSAttributedString(string: badgeText, attributes: attrs)
     let measuredSize = str.size()
-    badgeSize = CGSize(width: measuredSize.width + hPad * 2, height: measuredSize.height + vPad * 2)
+    badgeSize = CGSize(
+      width: measuredSize.width + hPad * 2,
+      height: measuredSize.height + vPad * 2
+    )
     attrString = str
   }
 
   // --- Canvas size ---
-  let totalWidth: CGFloat
-  if badgeText != nil {
-    totalWidth = iconSize.width + spacing + badgeSize.width
-  } else {
-    totalWidth = iconSize.width
-  }
+  let totalWidth = badgeText != nil
+    ? iconSize.width + spacing + badgeSize.width
+    : iconSize.width
   let totalHeight = max(iconSize.height, badgeSize.height)
   let imageSize = NSSize(width: ceil(totalWidth), height: ceil(totalHeight))
 
   // --- Draw ---
-  // AGENT: NSImage(size:flipped:drawingHandler:) defers drawing and
-  // automatically handles retina scaling via the backing store.
+  // AGENT: NSImage(size:flipped:drawingHandler:) handles retina scaling
+  // automatically via the backing store.
   let image = NSImage(size: imageSize, flipped: false) { rect in
-    // Draw icon centered vertically
+    // Draw icon centered vertically.
     let iconY = (rect.height - iconSize.height) / 2
     let iconRect = NSRect(x: 0, y: iconY, width: iconSize.width, height: iconSize.height)
 
@@ -264,42 +255,42 @@ private func compositeMenuBarImage(
       rawIcon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
     }
 
-      if let attrString {
-        let pillX = iconSize.width + spacing
-        let pillY = (rect.height - badgeSize.height) / 2
-        let pillRect = NSRect(x: pillX, y: pillY, width: badgeSize.width, height: badgeSize.height)
-        let pillPath = NSBezierPath(roundedRect: pillRect, xRadius: badgeSize.height / 2, yRadius: badgeSize.height / 2)
+    if let attrString {
+      let pillX = iconSize.width + spacing
+      let pillY = (rect.height - badgeSize.height) / 2
+      let pillRect = NSRect(x: pillX, y: pillY, width: badgeSize.width, height: badgeSize.height)
+      let pillPath = NSBezierPath(
+        roundedRect: pillRect,
+        xRadius: badgeSize.height / 2,
+        yRadius: badgeSize.height / 2
+      )
 
-        // Fill the pill using the provided color (e.g., white)
-        NSColor.labelColor.withAlphaComponent(0.85).setFill()
-        pillPath.fill()
+      NSColor.labelColor.withAlphaComponent(0.85).setFill()
+      pillPath.fill()
 
-        // Compute text origin (baseline point for NSAttributedString.draw(at:))
-        let textX = pillX + hPad
-        let textY = pillY + vPad
+      let textX = pillX + hPad
+      let textY = pillY + vPad
 
-        // Knock out the text from the pill by drawing with destinationOut blend mode
-        if let ctx = NSGraphicsContext.current?.cgContext {
-          ctx.saveGState()
-          ctx.setBlendMode(.destinationOut)
-
-          // Use fully opaque color so the glyph mask is solid; font must match measurement
+      // Knock the text out of the pill using destinationOut blend mode so it
+      // reads as a "cut-out" that inherits the menu bar background color.
+      if let ctx = NSGraphicsContext.current?.cgContext {
+        ctx.saveGState()
+        ctx.setBlendMode(.destinationOut)
         attrString.draw(at: NSPoint(x: textX, y: textY))
-
-          ctx.restoreGState()
-        }
+        ctx.restoreGState()
       }
+    }
 
     return true
   }
 
-  // AGENT: Setting isTemplate = false ensures the menu bar does not
-  // override our custom colors with its own vibrancy/tinting.
+  // AGENT: isTemplate = false — we manage our own color treatment.
+  // Setting true would cause the menu bar to override colors with vibrancy.
   image.isTemplate = false
   return image
 }
 
-/// Returns a rounded-design bold system font at the given size.
+/// Returns a rounded-design bold system font at the given point size.
 ///
 /// Falls back to the standard bold system font if the rounded design
 /// descriptor is unavailable.

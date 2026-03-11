@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="${APP_NAME:-Awake}"
-BUNDLE_ID="${BUNDLE_ID:-com.akkio.apps.awake}"
+BUNDLE_ID="${BUNDLE_ID:-com.happycodelucky.apps.awake}"
 VERSION="${VERSION:-1.0.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M%S)}"
 DEPLOYMENT_TARGET="${DEPLOYMENT_TARGET:-15.0}"

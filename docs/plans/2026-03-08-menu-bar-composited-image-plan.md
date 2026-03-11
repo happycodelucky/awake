@@ -21,7 +21,7 @@ Replace the entire file with the following. This removes the `MenuBarBadge` stru
 
 ```swift
 // MARK: - AwakeMenuBarApp
-// App entry point — creates AwakeController and AppUpdater, hosts the
+// App entry point — creates AwakeSessionManager and AppUpdater, hosts the
 // MenuBarExtra scene. Runs as an accessory (no Dock icon).
 
 import AppKit
@@ -31,7 +31,7 @@ import SwiftUI
 /// Hosts the menu bar extra and shared observable app state.
 @main
 struct AwakeMenuBarApp: App {
-  @StateObject private var controller = AwakeController()
+  @StateObject private var controller = AwakeSessionManager()
   @StateObject private var updater = AppUpdater()
 
   // AGENT: setActivationPolicy(.accessory) hides the app from the Dock and

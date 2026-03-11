@@ -316,7 +316,7 @@ struct SettingsGroupBox<Content: View>: View {
 }
 
 #if DEBUG
-  private let previewPolicyState = AwakeController.ManagedPolicyState(
+  private let previewPolicyState = AwakeSessionManager.ManagedPolicyState(
     screenSaverIdleTime: 900,
     loginWindowIdleTime: 300,
     asksForPasswordAfterScreenSaver: true,
@@ -374,14 +374,14 @@ struct SettingsGroupBox<Content: View>: View {
   #Preview("Policy Warning") {
     PolicyWarningCard(
       title: "Managed policies can end or interrupt long idle sessions",
-      known: AwakeController(
+      known: AwakeSessionManager(
         previewState: .active(
           remaining: 11 * 3600 + 59 * 60,
           sessionDuration: 12 * 3600,
           policyState: previewPolicyState
         )
       ).behaviorPolicyNotice?.known ?? [],
-      possible: AwakeController(
+      possible: AwakeSessionManager(
         previewState: .active(
           remaining: 11 * 3600 + 59 * 60,
           sessionDuration: 12 * 3600,

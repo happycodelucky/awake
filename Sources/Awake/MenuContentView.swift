@@ -38,7 +38,7 @@ final class ModifierKeyObserver: ObservableObject {
 
 /// Renders the menu bar popover content for timer control, settings, and updates.
 struct MenuContentView: View {
-  @ObservedObject var controller: AwakeController
+  @ObservedObject var manager: AwakeSessionManager
   @ObservedObject var updater: AppUpdater
   @Environment(\.colorScheme) private var colorScheme
   @StateObject private var modifierKeys = ModifierKeyObserver()
@@ -65,18 +65,18 @@ struct MenuContentView: View {
             .font(.system(size: 12, weight: .semibold, design: .rounded))
             .foregroundStyle(statusStyle)
         }
-        Text(controller.pulseStatusLine)
+        Text(manager.pulseStatusLine)
           .lineLimit(2)
           .font(.system(size: 12, weight: .medium, design: .rounded))
           .foregroundStyle(.secondary)
       }
 
       TimerHeroView(
-        timeText: controller.formattedRemaining(),
-        statusText: controller.isPaused ? "PAUSED" : (controller.isActive ? "TIME LEFT" : "READY"),
+        timeText: manager.formattedRemaining(),
+        statusText: manager.isPaused ? "PAUSED" : (manager.isActive ? "TIME LEFT" : "READY"),
         detailText: heroDetailText,
-        progress: controller.progress,
-        isActive: controller.hasSession,
+        progress: manager.progress,
+        isActive: manager.hasSession,
         colorScheme: colorScheme,
         actionButton: { heroActionButton }
       ).padding([.vertical], 8)
@@ -98,8 +98,8 @@ struct MenuContentView: View {
   /// - Parameters:
   ///   - controller: The timer controller backing the UI.
   ///   - updater: The updater state backing update notices.
-  init(controller: AwakeController, updater: AppUpdater) {
-    self.controller = controller
+  init(manager: AwakeSessionManager, updater: AppUpdater) {
+    self.manager = manager
     self.updater = updater
   }
 
@@ -114,23 +114,23 @@ struct MenuContentView: View {
 
   /// Returns the short status label shown in the header badge.
   private var statusTitle: String {
-    if controller.isPaused { "Paused" }
-    else if controller.isActive { "Active" }
+    if manager.isPaused { "Paused" }
+    else if manager.isActive { "Active" }
     else { "Idle" }
   }
 
   /// Returns the SF Symbol used by the header badge.
   private var statusSymbol: String {
-    if controller.isPaused { "pause.fill" }
-    else if controller.isActive { "bolt.fill" }
+    if manager.isPaused { "pause.fill" }
+    else if manager.isActive { "bolt.fill" }
     else { "moon.zzz.fill" }
   }
 
   /// Returns the visual style used by the header badge.
   private var statusStyle: AnyShapeStyle {
-    if controller.isPaused {
+    if manager.isPaused {
       AnyShapeStyle(Color.orange)
-    } else if controller.isActive {
+    } else if manager.isActive {
       AnyShapeStyle(accentGradient)
     } else {
       AnyShapeStyle(.secondary)
@@ -139,16 +139,16 @@ struct MenuContentView: View {
 
   /// Returns the descriptive line shown beneath the main timer value.
   private var heroDetailText: String {
-    if controller.isPaused {
+    if manager.isPaused {
       return "Resume or Hold ⌥ to stop"
     }
-    if controller.isActive {
+    if manager.isActive {
       // AGENT: When only IPC sessions are active (no app session), show a
       // hint that external callers are driving the awake state.
-      if !controller.hasAppSession && controller.hasIPCSessions {
+      if !manager.hasAppSession && manager.hasIPCSessions {
         return "Kept awake by external sessions"
       }
-      return controller.powerAssertionIsActive
+      return manager.powerAssertionIsActive
         ? "Hold ⌥ to pause"
         : "macOS could not acquire the power assertion"
     }
@@ -161,11 +161,11 @@ struct MenuContentView: View {
   /// warnings, and footer with Quit / Settings buttons.
   @ViewBuilder
   private var mainContent: some View {
-    if controller.hasIPCSessions {
+    if manager.hasIPCSessions {
       IPCSessionListView(
-        sessions: Array(controller.ipcSessions.values).sorted(by: { $0.endDate > $1.endDate }),
-        now: controller.now,
-        onDeactivate: { controller.deactivateIPCSession(id: $0) }
+        sessions: Array(manager.ipcSessions.values).sorted(by: { $0.endDate > $1.endDate }),
+        now: manager.now,
+        onDeactivate: { manager.deactivateIPCSession(id: $0) }
       )
     }
 
@@ -177,9 +177,9 @@ struct MenuContentView: View {
         .tracking(1.4)
 
       LazyVGrid(columns: columns, spacing: 8) {
-        ForEach(controller.presets) { preset in
+        ForEach(manager.presets) { preset in
           Button {
-            controller.start(minutes: preset.minutes)
+            manager.start(minutes: preset.minutes)
           } label: {
             VStack(spacing: 2) {
               Text(preset.shortLabel)
@@ -219,7 +219,7 @@ struct MenuContentView: View {
         .textCase(.uppercase)
         .tracking(1.4)
 
-      if let policyNotice = controller.behaviorPolicyNotice {
+      if let policyNotice = manager.behaviorPolicyNotice {
         PolicyWarningCard(
           title: policyNotice.title,
           known: policyNotice.known,
@@ -297,7 +297,7 @@ struct MenuContentView: View {
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
 
               Picker("Theme", selection: appearanceModeBinding) {
-                ForEach(AwakeController.AppearanceMode.allCases, id: \.self) { mode in
+                ForEach(AwakeSessionManager.AppearanceMode.allCases, id: \.self) { mode in
                   Text(mode.label).tag(mode)
                 }
               }
@@ -377,24 +377,24 @@ struct MenuContentView: View {
   /// Bridges controller sleep behavior into a toggle-friendly binding.
   private var keepDisplayAwakeBinding: Binding<Bool> {
     Binding(
-      get: { controller.keepsDisplayAwake },
-      set: { controller.setKeepsDisplayAwake($0) }
+      get: { manager.keepsDisplayAwake },
+      set: { manager.setKeepsDisplayAwake($0) }
     )
   }
 
   /// Bridges controller launch-at-login state into a toggle-friendly binding.
   private var launchAtLoginBinding: Binding<Bool> {
     Binding(
-      get: { controller.launchAtLogin },
-      set: { controller.setLaunchAtLogin($0) }
+      get: { manager.launchAtLogin },
+      set: { manager.setLaunchAtLogin($0) }
     )
   }
 
   /// Bridges controller appearance mode into a picker-friendly binding.
-  private var appearanceModeBinding: Binding<AwakeController.AppearanceMode> {
+  private var appearanceModeBinding: Binding<AwakeSessionManager.AppearanceMode> {
     Binding(
-      get: { controller.appearanceMode },
-      set: { controller.setAppearanceMode($0) }
+      get: { manager.appearanceMode },
+      set: { manager.setAppearanceMode($0) }
     )
   }
 
@@ -403,12 +403,12 @@ struct MenuContentView: View {
   /// Both paused and active states respond to the Option key: holding ⌥
   /// reveals the alternate action (stop while paused, pause while active).
   private var heroActionButton: some View {
-    if controller.isPaused {
+    if manager.isPaused {
       Button {
         if modifierKeys.isOptionPressed {
-          controller.stop()
+          manager.stop()
         } else {
-          controller.resume()
+          manager.resume()
         }
       } label: {
         CircleActionIcon(
@@ -419,12 +419,12 @@ struct MenuContentView: View {
       .buttonStyle(.plain)
       .help(modifierKeys.isOptionPressed ? "Stop session" : "Resume — Hold ⌥ to stop")
       .transition(.scale.combined(with: .opacity))
-    } else if controller.isActive {
+    } else if manager.isActive {
       Button {
         if modifierKeys.isOptionPressed {
-          controller.pause()
+          manager.pause()
         } else {
-          controller.stop()
+          manager.stop()
         }
       } label: {
         CircleActionIcon(
@@ -443,18 +443,18 @@ struct MenuContentView: View {
 #if DEBUG
   /// Wraps the menu content in a preview-friendly container.
   private struct MenuContentPreviewContainer: View {
-    let controller: AwakeController
+    let manager: AwakeSessionManager
     let updater: AppUpdater
 
     /// Builds the preview container layout.
     var body: some View {
-      MenuContentView(controller: controller, updater: updater)
+      MenuContentView(manager: manager, updater: updater)
         .padding()
         .frame(width: 340)
     }
   }
 
-  private let previewManagedPolicyState = AwakeController.ManagedPolicyState(
+  private let previewManagedPolicyState = AwakeSessionManager.ManagedPolicyState(
     screenSaverIdleTime: 900,
     loginWindowIdleTime: 300,
     asksForPasswordAfterScreenSaver: true,
@@ -465,14 +465,14 @@ struct MenuContentView: View {
 
   #Preview("Menu · Timer Off") {
     MenuContentPreviewContainer(
-      controller: AwakeController(previewState: .idle()),
+      manager: AwakeSessionManager(previewState: .idle()),
       updater: AppUpdater(previewNotice: nil)
     )
   }
 
   #Preview("Menu · 2h Timer") {
     MenuContentPreviewContainer(
-      controller: AwakeController(
+      manager: AwakeSessionManager(
         previewState: .active(
           remaining: 2 * 3600,
           sessionDuration: 2 * 3600
@@ -483,7 +483,7 @@ struct MenuContentView: View {
 
   #Preview("Menu · 11:59 with Policy Warning") {
     MenuContentPreviewContainer(
-      controller: AwakeController(
+      manager: AwakeSessionManager(
         previewState: .active(
           remaining: 11 * 3600 + 59 * 60,
           sessionDuration: 12 * 3600,
@@ -495,7 +495,7 @@ struct MenuContentView: View {
 
   #Preview("Menu · 29s Remaining") {
     MenuContentPreviewContainer(
-      controller: AwakeController(
+      manager: AwakeSessionManager(
         previewState: .active(
           remaining: 29,
           sessionDuration: 30 * 60,
@@ -508,7 +508,7 @@ struct MenuContentView: View {
 
   #Preview("Menu · Paused") {
     MenuContentPreviewContainer(
-      controller: AwakeController(
+      manager: AwakeSessionManager(
         previewState: .paused(
           remaining: 2 * 3600,
           sessionDuration: 4 * 3600
@@ -519,7 +519,7 @@ struct MenuContentView: View {
 
   #Preview("Menu · Update Alert") {
     MenuContentPreviewContainer(
-      controller: AwakeController(
+      manager: AwakeSessionManager(
         previewState: .active(
           remaining: 45 * 60,
           sessionDuration: 60 * 60
