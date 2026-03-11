@@ -4,7 +4,6 @@
 
 import AppKit
 import AwakeUI
-import Combine
 import SwiftUI
 import os
 
@@ -15,53 +14,77 @@ import os
 // for kAEGetURL (URL scheme open) is delivered to NSApplicationDelegate but
 // SwiftUI does not bridge it through to onOpenURL in this configuration.
 //
-// We use NSApplicationDelegateAdaptor to intercept the URL event at the
-// AppKit layer. The delegate owns the AwakeController (strong reference) and
-// the App struct accesses it via the delegate rather than creating its own.
-// This ensures the controller exists before the first URL event arrives.
+// We use NSApplicationDelegateAdaptor to intercept URL events at the AppKit
+// layer. The delegate owns the AwakeController and conforms to ObservableObject
+// so the App struct observes it via @NSApplicationDelegateAdaptor.
+//
 // AGENT: @MainActor is required because AwakeController is @MainActor-isolated.
 // NSApplicationDelegate methods are always called on the main thread on macOS,
 // so marking the class @MainActor is safe and correct here.
 //
-// AGENT: AwakeAppDelegate conforms to ObservableObject so that
-// @NSApplicationDelegateAdaptor wraps it as @ObservedObject in the App struct.
-// When the delegate's @Published properties change, the App struct body
-// re-evaluates — which re-reads controller.hasSession and controller.menuBarClockText,
-// updating the menu bar label. Without ObservableObject conformance the App
-// struct body never re-runs and the menu bar pill freezes.
+// AGENT: The menu bar label update problem —
+//   AwakeController is @Published-based, but @Published on a nested reference
+//   type does not automatically propagate through to the App struct's body.
+//   SwiftUI's App struct is not a View; its body is only re-evaluated when
+//   an @ObservedObject or @StateObject it reads fires objectWillChange.
+//   @NSApplicationDelegateAdaptor wraps the delegate as @ObservedObject when
+//   the delegate conforms to ObservableObject. So if the delegate fires
+//   objectWillChange, the App body re-runs and recomputes the menu bar image.
+//
+//   We expose menuBarState — a value that changes whenever the menu bar label
+//   needs to redraw — as a @Published property on the delegate. The clock
+//   timer in AwakeController drives now every second; we react to it via
+//   applicationDidFinishLaunching by starting our own 1-second timer that
+//   snapshots the relevant controller state into menuBarState. This is simpler
+//   and more reliable than Combine forwarding because it avoids the
+//   objectWillChange-before-mutation timing constraint entirely.
 @MainActor
 final class AwakeAppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
-  // AGENT: The delegate owns the controller — NOT the App struct. This
-  // ensures the controller is created eagerly when the delegate is
-  // instantiated (during NSApplicationDelegate setup, before the SwiftUI
-  // body runs), so it is always available when application(_:open:) fires.
-  //
-  // AGENT: @Published here is intentional. AwakeController is an
-  // ObservableObject, but @Published on a reference type does NOT forward
-  // child objectWillChange signals automatically. Instead, we subscribe to
-  // the controller's objectWillChange publisher in init() and forward it
-  // through the delegate's own objectWillChange sink so the App struct
-  // body re-evaluates whenever any @Published property on the controller
-  // fires. See controllerSubscription below.
+  // AGENT: The delegate owns the controller so it exists before any URL event.
   let controller = AwakeController()
 
-  // AGENT: Holds the AnyCancellable for the controller → delegate
-  // objectWillChange forwarding subscription. Must be stored as a property
-  // or the subscription is immediately cancelled.
-  private var controllerSubscription: AnyCancellable?
+  // AGENT: menuBarState is a @Published snapshot of the two values that drive
+  // the menu bar label: the icon name and optional clock text. Publishing a
+  // simple struct here avoids needing to forward the entire controller's
+  // objectWillChange, which has subtle timing issues in the App struct context.
+  @Published private(set) var menuBarState = MenuBarState(iconName: "mug", clockText: nil)
 
-  /// Subscribes to the controller's change publisher so this delegate's own
-  /// objectWillChange fires whenever the controller mutates. This keeps the
-  /// App struct's body (which reads controller state for the menu bar label)
-  /// in sync with every @Published change on the controller.
-  override init() {
-    super.init()
-    // Forward controller changes through the delegate's objectWillChange.
-    // The App struct observes the delegate via @NSApplicationDelegateAdaptor,
-    // so this chain: controller change → delegate objectWillChange → App body re-run.
-    controllerSubscription = controller.objectWillChange
-      .receive(on: RunLoop.main)
-      .sink { [weak self] _ in self?.objectWillChange.send() }
+  // AGENT: nonisolated(unsafe) because Timer.scheduledTimer requires a non-
+  // isolated context. The timer is only written in applicationDidFinishLaunching
+  // and invalidated in deinit — no concurrent mutation occurs.
+  nonisolated(unsafe) private var labelTimer: Timer?
+
+  /// Snapshot of the values needed to render the menu bar label image.
+  struct MenuBarState: Equatable {
+    let iconName: String
+    let clockText: String?
+  }
+
+  /// Called by AppKit when the app has finished launching. Starts the label
+  /// refresh timer that keeps the menu bar image in sync with the controller.
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    // Snapshot immediately so the menu bar shows the correct state on launch.
+    snapshotMenuBarState()
+    // Refresh the snapshot every second to match the controller's clock tick.
+    // AGENT: This timer drives menu bar label redraws. It fires separately
+    // from AwakeController's internal clock so that the App struct always
+    // has an up-to-date @Published value to observe.
+    labelTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+      Task { @MainActor [weak self] in self?.snapshotMenuBarState() }
+    }
+    RunLoop.main.add(labelTimer!, forMode: .common)
+  }
+
+  /// Updates menuBarState from the current controller state, publishing a
+  /// change only when the values actually differ (Equatable comparison).
+  private func snapshotMenuBarState() {
+    let newState = MenuBarState(
+      iconName: controller.powerAssertionIsActive ? "mug.fill" : "mug",
+      clockText: controller.hasSession ? controller.menuBarClockText : nil
+    )
+    if newState != menuBarState {
+      menuBarState = newState
+    }
   }
 
   /// Called by AppKit when the app receives a URL to open (kAEGetURL Apple Event).
@@ -81,9 +104,13 @@ final class AwakeAppDelegate: NSObject, NSApplicationDelegate, ObservableObject 
       case .activate(let id, let label, let duration):
         ipcLog.info("AppDelegate: activate session=\(id, privacy: .public) label=\(label, privacy: .public) duration=\(duration)")
         controller.activateIPCSession(id: id, label: label, duration: duration)
+        // Snapshot immediately so the menu bar updates without waiting for the
+        // next timer tick (which could be up to 1 second away).
+        snapshotMenuBarState()
       case .deactivate(let id):
         ipcLog.info("AppDelegate: deactivate session=\(id, privacy: .public)")
         controller.deactivateIPCSession(id: id)
+        snapshotMenuBarState()
       }
     }
   }
@@ -94,6 +121,10 @@ final class AwakeAppDelegate: NSObject, NSApplicationDelegate, ObservableObject 
 /// Hosts the menu bar extra and shared observable app state.
 @main
 struct AwakeMenuBarApp: App {
+  // AGENT: @NSApplicationDelegateAdaptor wraps the delegate as @ObservedObject
+  // when the delegate conforms to ObservableObject. The App struct body
+  // re-evaluates whenever the delegate's @Published menuBarState changes,
+  // which recomputes the menu bar label image.
   @NSApplicationDelegateAdaptor(AwakeAppDelegate.self) private var appDelegate
   @StateObject private var updater = AppUpdater()
 
@@ -145,16 +176,13 @@ struct AwakeMenuBarApp: App {
   // MARK: - Composited menu bar image
 
   /// Builds a composited NSImage containing the mug icon and optional countdown pill.
+  /// Reads from appDelegate.menuBarState, a @Published value that changes every
+  /// second (via the delegate's label timer), so the App body re-evaluates here.
   private var menuBarImage: NSImage {
     compositeMenuBarImage(
-      iconName: menuBarIconName,
-      badgeText: controller.hasSession ? controller.menuBarClockText : nil,
+      iconName: appDelegate.menuBarState.iconName,
+      badgeText: appDelegate.menuBarState.clockText,
     )
-  }
-
-  /// Returns the SF Symbol name for the current assertion state.
-  private var menuBarIconName: String {
-    controller.powerAssertionIsActive ? "mug.fill" : "mug"
   }
 }
 
