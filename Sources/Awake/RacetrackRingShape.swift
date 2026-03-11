@@ -4,6 +4,7 @@
 import SwiftUI
 
 /// Draws the rounded racetrack path used by the timer ring.
+@Animatable
 struct RacetrackRingShape: InsettableShape {
   var insetAmount: CGFloat = 0
 

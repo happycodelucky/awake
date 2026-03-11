@@ -78,7 +78,7 @@ struct MenuContentView: View {
         progress: controller.progress,
         isActive: controller.hasSession,
         colorScheme: colorScheme,
-        actionButton: AnyView(heroActionButton)
+        actionButton: { heroActionButton }
       ).padding([.vertical], 8)
 
       if showingSettings {
@@ -104,61 +104,50 @@ struct MenuContentView: View {
   }
 
   /// Returns the accent gradient shared by active-state treatments.
-  private var accentGradient: AnyShapeStyle {
-    AnyShapeStyle(
-      LinearGradient(
-        colors: colorScheme == .dark ? [Color.cyan, Color.green] : [Color.blue, Color.teal],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-      )
+  private var accentGradient: LinearGradient {
+    LinearGradient(
+      colors: colorScheme == .dark ? [Color.cyan, Color.green] : [Color.blue, Color.teal],
+      startPoint: .topLeading,
+      endPoint: .bottomTrailing
     )
   }
 
   /// Returns the short status label shown in the header badge.
   private var statusTitle: String {
-    if controller.isPaused {
-      return "Paused"
-    }
-    if controller.isActive {
-      return "Active"
-    }
-    return "Idle"
+    if controller.isPaused { "Paused" }
+    else if controller.isActive { "Active" }
+    else { "Idle" }
   }
 
   /// Returns the SF Symbol used by the header badge.
   private var statusSymbol: String {
-    if controller.isPaused {
-      return "pause.fill"
-    }
-    if controller.isActive {
-      return "bolt.fill"
-    }
-    return "moon.zzz.fill"
+    if controller.isPaused { "pause.fill" }
+    else if controller.isActive { "bolt.fill" }
+    else { "moon.zzz.fill" }
   }
 
   /// Returns the visual style used by the header badge.
   private var statusStyle: AnyShapeStyle {
     if controller.isPaused {
-      return AnyShapeStyle(Color.orange)
+      AnyShapeStyle(Color.orange)
+    } else if controller.isActive {
+      AnyShapeStyle(accentGradient)
+    } else {
+      AnyShapeStyle(.secondary)
     }
-    if controller.isActive {
-      return accentGradient
-    }
-    return AnyShapeStyle(.secondary)
   }
 
   /// Returns the descriptive line shown beneath the main timer value.
   private var heroDetailText: String {
     if controller.isPaused {
-      return "Resume or Hold ⌥ to stop"
+      "Resume or Hold ⌥ to stop"
+    } else if controller.isActive {
+      controller.powerAssertionIsActive
+        ? "Hold ⌥ to pause"
+        : "macOS could not acquire the power assertion"
+    } else {
+      "Choose a timer to begin"
     }
-    if controller.isActive {
-      if controller.powerAssertionIsActive {
-          return "Hold ⌥ to pause"
-      }
-      return "macOS could not acquire the power assertion"
-    }
-    return "Choose a timer to begin"
   }
 
   // MARK: - Main content
@@ -257,13 +246,11 @@ struct MenuContentView: View {
       .frame(maxWidth: .infinity)
       .buttonStyle(FooterButtonStyle())
 
-      Button {
+      Button("Settings", systemImage: "gearshape.fill") {
         showingSettings = true
-      } label: {
-        Image(systemName: "gearshape.fill")
       }
+      .labelStyle(.iconOnly)
       .buttonStyle(FooterIconButtonStyle())
-      .help("Settings")
     }
   }
 

@@ -8,24 +8,34 @@
 
 /* Begin PBXBuildFile section */
 		0E672F048800C31A3D5AE033 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = C4844637F40BC605F73B8E89 /* Sparkle */; };
+		361BE515DCBE5F9FE9B01FA1 /* DoneButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DF7BE8D921DA310D9C5F9C9 /* DoneButtonStyle.swift */; };
 		3F3274AEEB55DC58E7F98D1E /* RacetrackRingShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4EF3620E633245E79E20C6C /* RacetrackRingShape.swift */; };
+		405D91468CA0EE835E08A767 /* PresetButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DDAA973C9843808D51480EF /* PresetButtonStyle.swift */; };
+		468361C94FE19603E57F7A77 /* FooterButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F72E41C0FE4A94B967534CAA /* FooterButtonStyle.swift */; };
 		477131E2E921D32705C9D556 /* Styles.swift in Sources */ = {isa = PBXBuildFile; fileRef = C840D8EB06FB905546617AAE /* Styles.swift */; };
 		689F4776B7043D01BFCFEA0D /* MenuContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DB28C3C9AD9928BEF56EA27 /* MenuContentView.swift */; };
 		988D7154BA24ED10D568AED9 /* AwakeMenuBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 639399CF75D64BB7CD169980 /* AwakeMenuBarApp.swift */; };
+		9BCDA420B848F08BF7052C01 /* FooterIconButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 535B53D0DCC642DDF6D81B71 /* FooterIconButtonStyle.swift */; };
 		B32E3782A74348794C8A05A7 /* AwakeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE9F0CFFFE31556871362E51 /* AwakeController.swift */; };
 		B556F6C4CD651532A65CA2C5 /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9482ACA4B216F7569178C208 /* AppUpdater.swift */; };
+		CBE41E68F351C99B4B4BBF35 /* UpdateCardButtonStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = 073E18B8AB7522A4257A8986 /* UpdateCardButtonStyles.swift */; };
 		F9D9CCE556DF0F8BC89697A8 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEEC51726EDA8E7B81939556 /* Components.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		073E18B8AB7522A4257A8986 /* UpdateCardButtonStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCardButtonStyles.swift; sourceTree = "<group>"; };
+		0DDAA973C9843808D51480EF /* PresetButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresetButtonStyle.swift; sourceTree = "<group>"; };
+		535B53D0DCC642DDF6D81B71 /* FooterIconButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FooterIconButtonStyle.swift; sourceTree = "<group>"; };
 		639399CF75D64BB7CD169980 /* AwakeMenuBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AwakeMenuBarApp.swift; sourceTree = "<group>"; };
 		6DB28C3C9AD9928BEF56EA27 /* MenuContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuContentView.swift; sourceTree = "<group>"; };
 		7E65A836CC9F4D759239465E /* Awake.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Awake.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9482ACA4B216F7569178C208 /* AppUpdater.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
+		9DF7BE8D921DA310D9C5F9C9 /* DoneButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoneButtonStyle.swift; sourceTree = "<group>"; };
 		B4EF3620E633245E79E20C6C /* RacetrackRingShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RacetrackRingShape.swift; sourceTree = "<group>"; };
 		C840D8EB06FB905546617AAE /* Styles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Styles.swift; sourceTree = "<group>"; };
 		DE9F0CFFFE31556871362E51 /* AwakeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AwakeController.swift; sourceTree = "<group>"; };
 		EEEC51726EDA8E7B81939556 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		F72E41C0FE4A94B967534CAA /* FooterButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FooterButtonStyle.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -63,9 +73,14 @@
 				DE9F0CFFFE31556871362E51 /* AwakeController.swift */,
 				639399CF75D64BB7CD169980 /* AwakeMenuBarApp.swift */,
 				EEEC51726EDA8E7B81939556 /* Components.swift */,
+				9DF7BE8D921DA310D9C5F9C9 /* DoneButtonStyle.swift */,
+				F72E41C0FE4A94B967534CAA /* FooterButtonStyle.swift */,
+				535B53D0DCC642DDF6D81B71 /* FooterIconButtonStyle.swift */,
 				6DB28C3C9AD9928BEF56EA27 /* MenuContentView.swift */,
+				0DDAA973C9843808D51480EF /* PresetButtonStyle.swift */,
 				B4EF3620E633245E79E20C6C /* RacetrackRingShape.swift */,
 				C840D8EB06FB905546617AAE /* Styles.swift */,
+				073E18B8AB7522A4257A8986 /* UpdateCardButtonStyles.swift */,
 			);
 			name = Awake;
 			path = Sources/Awake;
@@ -138,9 +153,14 @@
 				B32E3782A74348794C8A05A7 /* AwakeController.swift in Sources */,
 				988D7154BA24ED10D568AED9 /* AwakeMenuBarApp.swift in Sources */,
 				F9D9CCE556DF0F8BC89697A8 /* Components.swift in Sources */,
+				361BE515DCBE5F9FE9B01FA1 /* DoneButtonStyle.swift in Sources */,
+				468361C94FE19603E57F7A77 /* FooterButtonStyle.swift in Sources */,
+				9BCDA420B848F08BF7052C01 /* FooterIconButtonStyle.swift in Sources */,
 				689F4776B7043D01BFCFEA0D /* MenuContentView.swift in Sources */,
+				405D91468CA0EE835E08A767 /* PresetButtonStyle.swift in Sources */,
 				3F3274AEEB55DC58E7F98D1E /* RacetrackRingShape.swift in Sources */,
 				477131E2E921D32705C9D556 /* Styles.swift in Sources */,
+				CBE41E68F351C99B4B4BBF35 /* UpdateCardButtonStyles.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
