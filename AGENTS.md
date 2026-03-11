@@ -1,6 +1,7 @@
 # Awake Build Notes
 
 - If Xcode is installed but the active developer directory is still Command Line Tools, run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` before building.
+- `Awake.xcodeproj` is generated from `project.yml` using XcodeGen. Install with `brew install xcodegen`, then run `xcodegen generate` from the repo root after any changes to `project.yml`.
 - Build the macOS app bundle with `./scripts/bundle_app.sh`.
 - When running `swift build` or other SwiftPM commands in Codex, set `SWIFTPM_MODULECACHE_OVERRIDE` to a module-cache path inside the project directory to avoid sandbox/cache permission issues. Example: `SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/module-cache"`.
 - When asked to compile or rebuild the app, first terminate any running Awake process with `pkill -x Awake`.

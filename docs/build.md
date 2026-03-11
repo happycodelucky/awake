@@ -7,7 +7,14 @@ The primary build script is `scripts/bundle_app.sh`. It produces two output arti
 - `dist/Awake.app` — the macOS application bundle
 - `dist/Awake.zip` — a zipped copy of the app bundle suitable for distribution
 
-The script requires Xcode or the Xcode Command Line Tools. It uses SwiftPM to compile the `AwakeMenuBar` product, generates the app icon, writes `Info.plist`, optionally embeds `Sparkle.framework`, and applies a code signature.
+The script requires Xcode (full install, not just Command Line Tools). It uses `xcodebuild` to compile the `Awake` scheme from `Awake.xcodeproj`, generates the app icon, writes `Info.plist`, extracts the embedded `Sparkle.framework` from the built `.app`, and applies a code signature.
+
+`Awake.xcodeproj` is generated from `project.yml` using XcodeGen. It is committed to source control (only `project.pbxproj` — user data is gitignored). To regenerate after changing `project.yml`:
+
+```sh
+brew install xcodegen   # first time only
+xcodegen generate
+```
 
 Basic usage:
 
@@ -86,20 +93,25 @@ Writes `Contents/Info.plist` directly from a here-doc, embedding all relevant bu
 
 If `SPARKLE_FEED_URL` is non-empty, `SUFeedURL` is appended via `PlistBuddy`. If `SPARKLE_PUBLIC_ED_KEY` is non-empty, `SUPublicEDKey` is appended the same way.
 
-### 5. SPM Build Per Architecture
+### 5. xcodebuild Per Architecture
 
-For each architecture listed in `ARCHS`, SwiftPM builds the `AwakeMenuBar` product in release mode:
+For each architecture listed in `ARCHS`, `xcodebuild` builds the `Awake` scheme from `Awake.xcodeproj` in Release configuration:
 
 ```sh
-swift build \
-  --package-path <root> \
-  --scratch-path .build/bundle/spm-<arch> \
-  -c release \
-  --arch <arch> \
-  --product AwakeMenuBar
+xcodebuild \
+  -project Awake.xcodeproj \
+  -scheme Awake \
+  -configuration Release \
+  -arch <arch> \
+  -derivedDataPath .build/bundle/xcode-<arch> \
+  MARKETING_VERSION=<VERSION> \
+  CURRENT_PROJECT_VERSION=<BUILD_NUMBER> \
+  CODE_SIGN_IDENTITY="" \
+  CODE_SIGNING_REQUIRED=NO \
+  build
 ```
 
-Each resulting binary is copied to `.build/bundle/$APP_NAME-<arch>`.
+The resulting `Awake.app` binary is copied from derived data to `.build/bundle/$APP_NAME-<arch>`. The `Sparkle.framework` path is also captured from the first arch's built `.app` for embedding in the final bundle.
 
 ### 6. lipo (Multi-Arch Only)
 
@@ -113,7 +125,7 @@ When only one architecture is built, the binary is copied directly without invok
 
 ### 7. Sparkle.framework Embedding
 
-If the SPM build produced a `Sparkle.framework` under `.build/bundle/`, the framework is copied into `Contents/Frameworks/`. No action is taken when the framework is absent.
+`Sparkle.framework` is extracted from the first-built arch's `Contents/Frameworks/` inside derived data, then copied into the final bundle's `Contents/Frameworks/`. Xcode resolves and embeds Sparkle automatically during the build — the script just relocates it. No action is taken when the framework is absent.
 
 ### 8. Code Signing
 
@@ -218,7 +230,7 @@ The icon is a 1024x1024 canvas with the following layers, composited top to bott
 
 1. Check out the repository.
 2. Print toolchain versions (`xcodebuild -version`, `swift --version`).
-3. Run `swift build` to validate the Swift package compiles cleanly.
+3. Run `xcodegen generate` to ensure `Awake.xcodeproj` is up to date.
 4. Run `./scripts/bundle_app.sh` with `VERSION=ci-<run_number>` and `BUILD_NUMBER=<run_number>`.
 5. Upload `dist/Awake.app` and `dist/Awake.zip` as workflow artifacts named `awake-ci-artifacts`.
 
