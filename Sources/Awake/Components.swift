@@ -1,18 +1,45 @@
 // MARK: - Components
 // Reusable view components: TimerHeroView, CircleActionIcon,
-// PolicyWarningCard, and UpdateNoticeCard.
+// PolicyWarningCard, UpdateNoticeCard, and SettingsGroupBox.
 
 import SwiftUI
 
 /// Renders the primary timer summary, ring, and session action in the menu.
-struct TimerHeroView: View {
+struct TimerHeroView<ActionButton: View>: View {
   let timeText: String
   let statusText: String
   let detailText: String
   let progress: Double
   let isActive: Bool
   let colorScheme: ColorScheme
-  let actionButton: AnyView
+  @ViewBuilder let actionButton: ActionButton
+
+  /// Creates the timer hero view.
+  /// - Parameters:
+  ///   - timeText: Formatted remaining time string.
+  ///   - statusText: Short status label shown above the time (e.g. "TIME LEFT").
+  ///   - detailText: Descriptive line shown beneath the time value.
+  ///   - progress: Ring fill fraction from 0 to 1.
+  ///   - isActive: Whether a session is running or paused.
+  ///   - colorScheme: Current color scheme for gradient selection.
+  ///   - actionButton: The contextual action button rendered alongside the time.
+  init(
+    timeText: String,
+    statusText: String,
+    detailText: String,
+    progress: Double,
+    isActive: Bool,
+    colorScheme: ColorScheme,
+    @ViewBuilder actionButton: () -> ActionButton
+  ) {
+    self.timeText = timeText
+    self.statusText = statusText
+    self.detailText = detailText
+    self.progress = progress
+    self.isActive = isActive
+    self.colorScheme = colorScheme
+    self.actionButton = actionButton()
+  }
 
   /// Builds the hero card for the current timer state. Animates ring
   /// progress, text changes, and button appear/disappear transitions.
@@ -42,7 +69,7 @@ struct TimerHeroView: View {
             .lineLimit(1)
             .minimumScaleFactor(0.55)
             .allowsTightening(true)
-            .foregroundStyle(isActive ? progressStyle : AnyShapeStyle(.primary))
+            .foregroundStyle(isActive ? AnyShapeStyle(progressStyle) : AnyShapeStyle(.primary))
             .contentTransition(.numericText(countsDown: true))
             .animation(.easeInOut(duration: 0.3), value: timeText)
             .animation(.easeInOut(duration: 0.35), value: isActive)
@@ -65,18 +92,16 @@ struct TimerHeroView: View {
   }
 
   /// Returns the subdued style used for the inactive ring track.
-  private var trackStyle: AnyShapeStyle {
-    AnyShapeStyle(Color.secondary.opacity(colorScheme == .dark ? 0.22 : 0.16))
+  private var trackStyle: some ShapeStyle {
+    Color.secondary.opacity(colorScheme == .dark ? 0.22 : 0.16)
   }
 
   /// Returns the gradient style used for the active progress segment.
-  private var progressStyle: AnyShapeStyle {
-    AnyShapeStyle(
-      LinearGradient(
-        colors: colorScheme == .dark ? [Color.cyan, Color.green] : [Color.blue, Color.teal],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-      )
+  private var progressStyle: LinearGradient {
+    LinearGradient(
+      colors: colorScheme == .dark ? [Color.cyan, Color.green] : [Color.blue, Color.teal],
+      startPoint: .topLeading,
+      endPoint: .bottomTrailing
     )
   }
 }
@@ -159,7 +184,7 @@ struct PolicyWarningCard: View {
               .tracking(1.1)
               .foregroundStyle(.secondary)
 
-            ForEach(Array(known.enumerated()), id: \.offset) { _, message in
+            ForEach(known, id: \.self) { message in
               warningLine(message)
             }
           }
@@ -172,7 +197,7 @@ struct PolicyWarningCard: View {
               .tracking(1.1)
               .foregroundStyle(.secondary)
 
-            ForEach(Array(possible.enumerated()), id: \.offset) { _, message in
+            ForEach(possible, id: \.self) { message in
               warningLine(message)
             }
           }
@@ -264,6 +289,32 @@ struct UpdateNoticeCard: View {
   }
 }
 
+/// Wraps settings content in a card-style container matching
+/// the existing `PolicyWarningCard` / `UpdateNoticeCard` visual pattern.
+struct SettingsGroupBox<Content: View>: View {
+  let content: Content
+
+  /// Creates a settings group box with the provided content.
+  /// - Parameter content: The settings controls to display inside the card.
+  init(@ViewBuilder content: () -> Content) {
+    self.content = content()
+  }
+
+  /// Builds the card container with material background and subtle border.
+  var body: some View {
+    content
+      .padding(14)
+      .background(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+          .fill(.regularMaterial)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+          .strokeBorder(Color.secondary.opacity(0.12))
+      )
+  }
+}
+
 #if DEBUG
   private let previewPolicyState = AwakeController.ManagedPolicyState(
     screenSaverIdleTime: 900,
@@ -281,9 +332,10 @@ struct UpdateNoticeCard: View {
       detailText: "macOS will keep the display on for this session",
       progress: 11.0 / 12.0,
       isActive: true,
-      colorScheme: .light,
-      actionButton: AnyView(CircleActionIcon(symbolName: "xmark", fillColor: .red))
-    )
+      colorScheme: .light
+    ) {
+      CircleActionIcon(symbolName: "xmark", fillColor: .red)
+    }
     .padding()
     .frame(width: 320)
   }
@@ -295,9 +347,10 @@ struct UpdateNoticeCard: View {
       detailText: "macOS will keep background work running while the display can sleep",
       progress: 29.0 / 120.0,
       isActive: true,
-      colorScheme: .dark,
-      actionButton: AnyView(CircleActionIcon(symbolName: "pause.fill", fillColor: .orange))
-    )
+      colorScheme: .dark
+    ) {
+      CircleActionIcon(symbolName: "pause.fill", fillColor: .orange)
+    }
     .padding()
     .frame(width: 320)
     .preferredColorScheme(.dark)
@@ -310,9 +363,10 @@ struct UpdateNoticeCard: View {
       detailText: "Choose a timer to begin",
       progress: 0,
       isActive: false,
-      colorScheme: .light,
-      actionButton: AnyView(EmptyView())
-    )
+      colorScheme: .light
+    ) {
+      EmptyView()
+    }
     .padding()
     .frame(width: 320)
   }

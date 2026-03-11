@@ -3,7 +3,6 @@
 // MenuBarExtra scene. Runs as an accessory (no Dock icon).
 
 import AppKit
-import AwakeUI
 import SwiftUI
 import os
 

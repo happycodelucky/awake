@@ -5,11 +5,12 @@
 import AppKit
 import Foundation
 import IOKit.pwr_mgt
+import ServiceManagement
 import os
 
 @MainActor
 /// Manages timer lifecycle, power assertions, and managed policy awareness.
-public final class AwakeController: ObservableObject {
+final class AwakeController: ObservableObject {
   /// Captures a stable controller snapshot used by previews.
   struct PreviewState {
     let now: Date
@@ -20,6 +21,7 @@ public final class AwakeController: ObservableObject {
     let powerAssertionIsActive: Bool
     let assertionErrorMessage: String?
     let sleepBehavior: SleepBehavior
+    let appearanceMode: AppearanceMode
     let managedPolicyState: ManagedPolicyState
   }
 
@@ -155,15 +157,41 @@ public final class AwakeController: ObservableObject {
     }
   }
 
-  @Published public private(set) var now = Date()
-  @Published public private(set) var endDate: Date?
-  @Published public private(set) var sessionDuration: TimeInterval?
-  @Published public private(set) var pausedRemaining: TimeInterval?
+  /// Describes the user's preferred appearance override for the app.
+  enum AppearanceMode: String, CaseIterable {
+    case system
+    case light
+    case dark
+
+    /// Returns the `NSAppearance` that should be applied, or nil for system default.
+    var nsAppearance: NSAppearance? {
+      switch self {
+      case .system: return nil
+      case .light: return NSAppearance(named: .aqua)
+      case .dark: return NSAppearance(named: .darkAqua)
+      }
+    }
+
+    /// User-facing label for the appearance mode.
+    var label: String {
+      switch self {
+      case .system: return "System"
+      case .light: return "Light"
+      case .dark: return "Dark"
+      }
+    }
+  }
+
+  @Published private(set) var now = Date()
+  @Published private(set) var endDate: Date?
+  @Published private(set) var sessionDuration: TimeInterval?
+  @Published private(set) var pausedRemaining: TimeInterval?
   /// Active IPC sessions keyed by caller-provided session identifier.
-  @Published public private(set) var ipcSessions: [String: IPCSession] = [:]
-  @Published public private(set) var powerAssertionIsActive = false
+  @Published private(set) var ipcSessions: [String: IPCSession] = [:]
+  @Published private(set) var powerAssertionIsActive = false
   @Published private(set) var assertionErrorMessage: String?
   @Published private(set) var sleepBehavior: SleepBehavior = .keepDisplayAwake
+  @Published private(set) var appearanceMode: AppearanceMode = .system
   @Published private(set) var managedPolicyState = ManagedPolicyState(
     screenSaverIdleTime: nil,
     loginWindowIdleTime: nil,
@@ -188,6 +216,7 @@ public final class AwakeController: ObservableObject {
   private let durationDefaultsKey = "awake.duration"
   private let pausedRemainingDefaultsKey = "awake.pausedRemaining"
   private let sleepBehaviorDefaultsKey = "awake.sleepBehavior"
+  private let appearanceModeDefaultsKey = "awake.appearanceMode"
   private let ipcSessionsDefaultsKey = "awake.ipcSessions"
   private let powerAssertionReason = "Keep the Mac awake for an active Awake timer" as CFString
 
@@ -212,9 +241,10 @@ public final class AwakeController: ObservableObject {
   ]
 
   /// Restores persisted session state and starts the live timer loop.
-  public init() {
+  init() {
     restoreSavedState()
     restoreIPCSessions()
+    applyAppearance()
     refreshManagedPolicyState(force: true)
     startClock()
     syncPowerAssertion()
@@ -231,6 +261,7 @@ public final class AwakeController: ObservableObject {
     powerAssertionIsActive = previewState.powerAssertionIsActive
     assertionErrorMessage = previewState.assertionErrorMessage
     sleepBehavior = previewState.sleepBehavior
+    appearanceMode = previewState.appearanceMode
     managedPolicyState = previewState.managedPolicyState
     lastPolicyRefresh = previewState.now
   }
@@ -243,30 +274,30 @@ public final class AwakeController: ObservableObject {
     }
   }
 
-  /// Indicates whether any awake session (app or IPC) is currently running.
-  public var isActive: Bool {
-    effectiveEndDate != nil
-  }
-
   /// Indicates whether the app session specifically has an active end date.
-  public var hasAppSession: Bool {
+  var hasAppSession: Bool {
     guard let endDate else { return false }
     return endDate > now
   }
 
+  /// Indicates whether any awake session (app or IPC) is currently running.
+  var isActive: Bool {
+    effectiveEndDate != nil
+  }
+
   /// Indicates whether a session is paused with remaining time preserved.
-  public var isPaused: Bool {
+  var isPaused: Bool {
     guard let pausedRemaining else { return false }
     return pausedRemaining > 0
   }
 
   /// Indicates whether there is either an active or paused session.
-  public var hasSession: Bool {
+  var hasSession: Bool {
     isActive || isPaused
   }
 
   /// Indicates whether any IPC sessions are active.
-  public var hasIPCSessions: Bool {
+  var hasIPCSessions: Bool {
     !ipcSessions.isEmpty
   }
 
@@ -278,7 +309,7 @@ public final class AwakeController: ObservableObject {
   }
 
   /// Returns the short status line shown in the main menu header.
-  public var pulseStatusLine: String {
+  var pulseStatusLine: String {
     if isPaused {
       return "Paused with \(formattedRemaining()) left"
     }
@@ -302,8 +333,44 @@ public final class AwakeController: ObservableObject {
   }
 
   /// Indicates whether the current behavior also prevents display sleep.
-  public var keepsDisplayAwake: Bool {
+  var keepsDisplayAwake: Bool {
     sleepBehavior == .keepDisplayAwake
+  }
+
+  // AGENT: launchAtLogin is cached as @Published rather than reading
+  // SMAppService.mainApp.status live in a computed property, because the
+  // status call is an IPC syscall to the ServiceManagement daemon and
+  // SwiftUI re-evaluates bindings on every render cycle (once per second
+  // while the settings panel is open via the clock timer).
+  /// Indicates whether the app is registered as a login item.
+  @Published private(set) var launchAtLogin: Bool = false
+
+  /// Registers or unregisters the app as a login item.
+  /// - Parameter enabled: `true` to register, `false` to unregister.
+  func setLaunchAtLogin(_ enabled: Bool) {
+    // AGENT: SMAppService can fail if the app is unsigned or if the user
+    // revoked the login item in System Settings. We log but do not surface
+    // errors in the UI because the toggle re-reads the actual system state
+    // after each attempt, so it self-corrects.
+    do {
+      if enabled {
+        try SMAppService.mainApp.register()
+      } else {
+        try SMAppService.mainApp.unregister()
+      }
+    } catch {
+      print("SMAppService error: \(error)")
+    }
+    launchAtLogin = SMAppService.mainApp.status == .enabled
+  }
+
+  /// Updates the app appearance mode and persists the choice.
+  /// - Parameter mode: The appearance mode the user selected.
+  func setAppearanceMode(_ mode: AppearanceMode) {
+    guard mode != appearanceMode else { return }
+    appearanceMode = mode
+    UserDefaults.standard.set(mode.rawValue, forKey: appearanceModeDefaultsKey)
+    applyAppearance()
   }
 
   /// Builds a warning notice when managed policies may interrupt the session.
@@ -320,7 +387,11 @@ public final class AwakeController: ObservableObject {
     }
 
     if let screenSaverIdleTime = managedPolicyState.screenSaverIdleTime {
-      let willTriggerWithinSession = hasSession && effectiveRemaining > screenSaverIdleTime
+      // AGENT: Use the app-session remaining (remainingInterval) for the policy
+      // threshold check, not effectiveRemaining. IPC sessions could push effective
+      // remaining far into the future, but managed policy warnings should only
+      // reflect the app session the user is explicitly managing here.
+      let willTriggerWithinSession = hasSession && remainingInterval > screenSaverIdleTime
       let timing =
         willTriggerWithinSession
         ? "during this session"
@@ -369,7 +440,7 @@ public final class AwakeController: ObservableObject {
   }
 
   /// Formats the compact countdown shown in the menu bar pill.
-  public var menuBarClockText: String {
+  var menuBarClockText: String {
     guard hasSession else { return "" }
 
     let remaining = effectiveRemaining
@@ -447,7 +518,7 @@ public final class AwakeController: ObservableObject {
   ///   - duration: Requested duration in seconds. Capped at 24 hours.
   /// - Returns: `true` if the session was accepted, `false` if validation failed.
   @discardableResult
-  public func activateIPCSession(id: String, label: String, duration: TimeInterval) -> Bool {
+  func activateIPCSession(id: String, label: String, duration: TimeInterval) -> Bool {
     guard !id.isEmpty, !label.isEmpty, duration > 0 else {
       ipcLog.warning("activateIPCSession: rejected — id=\(id, privacy: .public) label=\(label, privacy: .public) duration=\(duration)")
       return false
@@ -472,7 +543,7 @@ public final class AwakeController: ObservableObject {
 
   /// Removes a named IPC session by its identifier.
   /// - Parameter id: The session identifier to deactivate.
-  public func deactivateIPCSession(id: String) {
+  func deactivateIPCSession(id: String) {
     if ipcSessions.removeValue(forKey: id) != nil {
       ipcLog.info("deactivateIPCSession: removed id=\(id, privacy: .public), remaining=\(self.ipcSessions.count)")
       saveIPCSessions()
@@ -497,10 +568,10 @@ public final class AwakeController: ObservableObject {
     acquirePowerAssertionIfNeeded()
   }
 
-  /// Formats the effective remaining session time for either the menu bar or expanded UI.
+  /// Formats the remaining session time for either the menu bar or expanded UI.
   /// - Parameter compact: Indicates whether to use a short compact format.
   /// - Returns: A human-readable remaining-time string.
-  public func formattedRemaining(compact: Bool = false) -> String {
+  func formattedRemaining(compact: Bool = false) -> String {
     let remaining = max(0, Int(effectiveRemaining))
     guard remaining > 0 else { return compact ? "Idle" : "00:00" }
     let hours = remaining / 3600
@@ -546,6 +617,23 @@ public final class AwakeController: ObservableObject {
       }
     }
     RunLoop.main.add(clockTimer!, forMode: .common)
+  }
+
+  /// Applies the current appearance mode to `NSApp`.
+  ///
+  /// Only assigns `NSApp.appearance` when an explicit override (light/dark)
+  /// is active, or when reverting a previous override back to system default.
+  // AGENT: Setting NSApp.appearance = nil is NOT the same as never setting it.
+  // The MenuBarExtra .window style panel inherits special vibrancy/material
+  // from the menu bar. Assigning nil when NSApp.appearance was never touched
+  // forces AppKit to re-resolve the appearance chain, which breaks the
+  // panel's native material and makes controls (Toggle, backgrounds) render
+  // differently. We guard against this by only assigning when there is
+  // already an override in place or when we need to install one.
+  private func applyAppearance() {
+    let desired = appearanceMode.nsAppearance
+    guard desired != nil || NSApp.appearance != nil else { return }
+    NSApp.appearance = desired
   }
 
   /// Ensures the power assertion matches the current effective timer state.
@@ -601,6 +689,14 @@ public final class AwakeController: ObservableObject {
     if let savedSleepBehavior, let behavior = SleepBehavior(rawValue: savedSleepBehavior) {
       sleepBehavior = behavior
     }
+
+    if let savedAppearanceMode = UserDefaults.standard.string(forKey: appearanceModeDefaultsKey),
+      let mode = AppearanceMode(rawValue: savedAppearanceMode)
+    {
+      appearanceMode = mode
+    }
+
+    launchAtLogin = SMAppService.mainApp.status == .enabled
 
     sessionDuration = duration > 0 ? duration : nil
 
@@ -679,6 +775,18 @@ public final class AwakeController: ObservableObject {
     }
     guard let effective = effectiveEndDate else { return 0 }
     return max(0, effective.timeIntervalSince(now))
+  }
+
+  /// The app-session-only remaining interval (excludes IPC sessions).
+  /// Used by `behaviorPolicyNotice` for policy threshold comparisons.
+  private var remainingInterval: TimeInterval {
+    if let endDate {
+      return max(0, endDate.timeIntervalSince(now))
+    }
+    if let pausedRemaining {
+      return max(0, pausedRemaining)
+    }
+    return 0
   }
 
   /// The full duration of whichever session drives the effective end date.
@@ -809,6 +917,7 @@ public final class AwakeController: ObservableObject {
         powerAssertionIsActive: false,
         assertionErrorMessage: nil,
         sleepBehavior: .keepDisplayAwake,
+        appearanceMode: .system,
         managedPolicyState: .init(
           screenSaverIdleTime: nil,
           loginWindowIdleTime: nil,
@@ -828,6 +937,7 @@ public final class AwakeController: ObservableObject {
     ///   - policyState: Managed policy values to expose in the preview.
     ///   - powerAssertionIsActive: Indicates whether the power assertion should appear active.
     ///   - assertionErrorMessage: The assertion failure text to expose, if any.
+    ///   - ipcSessions: IPC sessions to include in the preview.
     /// - Returns: An active preview state.
     static func active(
       remaining: TimeInterval,
@@ -848,6 +958,7 @@ public final class AwakeController: ObservableObject {
         powerAssertionIsActive: powerAssertionIsActive,
         assertionErrorMessage: assertionErrorMessage,
         sleepBehavior: keepsDisplayAwake ? .keepDisplayAwake : .allowDisplaySleep,
+        appearanceMode: .system,
         managedPolicyState: policyState
           ?? .init(
             screenSaverIdleTime: nil,
@@ -876,6 +987,7 @@ public final class AwakeController: ObservableObject {
         powerAssertionIsActive: false,
         assertionErrorMessage: nil,
         sleepBehavior: .keepDisplayAwake,
+        appearanceMode: .system,
         managedPolicyState: .init(
           screenSaverIdleTime: nil,
           loginWindowIdleTime: nil,

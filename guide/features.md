@@ -50,9 +50,29 @@ The menu bar badge remains visible while paused.
 
 ---
 
+## Settings
+
+Click the **gear icon** in the bottom-right corner of the Awake popover to open the settings panel. The timer remains visible at the top while you adjust settings.
+
+### Start at Login
+
+Turn on "Start at login" to launch Awake automatically when you log in to your Mac. When you restart or log back in, Awake will start in the menu bar with your previous session restored (if it has not expired).
+
+### Appearance
+
+Choose between **System**, **Light**, or **Dark** theme modes. System follows your Mac's current appearance setting. Light and Dark override it for the Awake popover only.
+
+### MCP Server
+
+A future feature that will allow AI agents and automation tools to control Awake sessions over the Model Context Protocol. The controls are visible but disabled.
+
+Click **Done** to return to the main timer view.
+
+---
+
 ## Two Sleep Modes
 
-The "Keep display awake" toggle in the **Behavior** section controls which type of sleep Awake prevents.
+The "Keep display awake" toggle in the **Behavior** section of the main view controls which type of sleep Awake prevents.
 
 **Keep display awake — ON (default)**
 

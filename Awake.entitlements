@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- AGENT: App Sandbox is intentionally NOT enabled. The app reads
+         /Library/Managed Preferences to detect MDM policies, which requires
+         unsandboxed file access. Enabling App Sandbox would silently break
+         managed policy detection without any error or warning. -->
+</dict>
+</plist>

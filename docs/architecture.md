@@ -14,29 +14,31 @@ Key characteristics:
 - **Timer-driven.** A one-second repeating `Timer` ticks on the main run loop, advancing `@Published` state that SwiftUI observes directly.
 - **IOKit power assertions.** Two assertion types cover two distinct sleep behaviors: one that also blocks display sleep and one that allows it.
 - **Managed policy awareness.** At launch and on a 60-second throttle thereafter, the controller reads `/Library/Managed Preferences` plists to detect MDM-enforced screensaver, lock, and auto-logout policies that Awake cannot override. When relevant policies are found, a warning card surfaces in the UI.
-- **State persistence.** Session state (end date, duration, paused remaining) and behavior preference (sleep behavior) survive across relaunches via `UserDefaults`.
+- **State persistence.** Session state (end date, duration, paused remaining), behavior preference (sleep behavior), and appearance mode survive across relaunches via `UserDefaults`.
+- **Login item registration.** Optional start-at-login via `SMAppService.mainApp` (ServiceManagement framework). The toggle reads the actual system state rather than storing a boolean.
 - **Sparkle updates.** Update checking is conditional — Sparkle only activates when the app bundle contains both `SUFeedURL` and `SUPublicEDKey` Info.plist keys.
 
 Minimum deployment target: **macOS 15.0**. Default build target: **Apple Silicon (arm64)**.
 
 ---
 
-## Package Structure
+## Project Structure
 
-The Swift package (`Package.swift`) is split into a library and an executable. The split keeps all UI and business logic in a testable, preview-friendly target that has no dependency on the app entry point.
+The Xcode project (`Awake.xcodeproj`) is generated from `project.yml` via XcodeGen. It contains a single App target:
 
-| Product / Target | Path | Role |
+| Target | Path | Role |
 |---|---|---|
-| `AwakeUI` (library) | `Sources/AwakeUI/` | All business logic, IOKit integration, SwiftUI views, Sparkle wrapper, and reusable components. This target can be imported by tests or tooling without an `@main` entry point. |
-| `AwakeMenuBar` (executable) | `Sources/AwakeMenuBarApp/` | Thin `@main` entry point. Creates `AwakeController` and `AppUpdater` as `@StateObject`s, declares the `MenuBarExtra` scene, and configures the activation policy. |
+| `Awake` (App) | `Sources/Awake/` | Single target containing all business logic, IOKit integration, SwiftUI views, Sparkle wrapper, reusable components, and the `@main` entry point. SwiftUI Previews are enabled via the native Xcode App target preview host. |
 
-The executable target declares `AwakeUI` as its only dependency:
+The target dependency chain:
 
 ```
-AwakeMenuBar → AwakeUI → Sparkle (conditional)
+Awake → Sparkle (SPM remote package, conditional at runtime)
 ```
 
-Sparkle is a dependency of `AwakeUI`, not the executable. This means the library controls all update integration.
+`Package.swift` is retained as a vestigial reference but is not used by the active build system. The active build is driven by `Awake.xcodeproj` via `xcodebuild`.
+
+All source files are in `Sources/Awake/`. There are no cross-module `public` access modifiers — all types use the default internal access level within the single module.
 
 ---
 
@@ -46,6 +48,7 @@ Sparkle is a dependency of `AwakeUI`, not the executable. This means the library
 |---|---|---|
 | [Sparkle](https://github.com/sparkle-project/Sparkle) | `>= 2.8.0` (resolved: 2.9.0) | Automatic update checking and installation. `AppUpdater` wraps `SPUUpdater` and `SPUUserDriver`. Active only when `SUFeedURL` and `SUPublicEDKey` are present in the app bundle's Info.plist; the wrapper silently disables itself otherwise. |
 | IOKit (`IOKit.pwr_mgt`) | System | `IOPMAssertionCreateWithName` / `IOPMAssertionRelease` for power assertions. Imported in `AwakeController.swift`. |
+| ServiceManagement (`SMAppService`) | System | Login item registration. `SMAppService.mainApp.register()` / `.unregister()` in `AwakeController.setLaunchAtLogin(_:)`. |
 | AppKit | System | `NSApplication`, `NSEvent` (modifier key monitoring in `MenuContentView`), and `NSUserName()` (managed policy user path). |
 | SwiftUI | System | All views and the `MenuBarExtra` scene. |
 | Foundation | System | `Timer`, `UserDefaults`, `PropertyListSerialization`, `URL`, `Date`, `TimeInterval`. |
@@ -54,25 +57,20 @@ Sparkle is a dependency of `AwakeUI`, not the executable. This means the library
 
 ## Source Files
 
-### `Sources/AwakeUI/`
+All source files live in `Sources/Awake/`.
 
 | File | Primary types | Role |
 |---|---|---|
-| `AwakeController.swift` | `AwakeController`, `ManagedPolicyState`, `BehaviorPolicyNotice`, `SleepBehavior` | Central `@MainActor ObservableObject`. Owns the one-second clock timer, IOKit power assertions, session lifecycle (`start`, `pause`, `resume`, `stop`), IPC session registry (`ipcSessions`), effective-state computation, `UserDefaults` persistence (`saveState` / `restoreSavedState` / `saveIPCSessions` / `restoreIPCSessions`), and managed policy loading. All `@Published` properties drive the SwiftUI layer. |
+| `AwakeMenuBarApp.swift` | `AwakeMenuBarApp`, `AwakeAppDelegate` | `@main` App entry point. `AwakeAppDelegate` owns `AwakeController`, intercepts `awake://` URLs via `NSApplicationDelegate`, and exposes `@Published var menuBarState` driven by a 1-second `Timer` to keep the menu bar label in sync. `AwakeMenuBarApp` sets activation policy to `.accessory`, owns `AppUpdater` as a `@StateObject`, and declares the `MenuBarExtra` scene. |
+| `AwakeController.swift` | `AwakeController`, `ManagedPolicyState`, `BehaviorPolicyNotice`, `SleepBehavior`, `AppearanceMode` | Central `@MainActor ObservableObject`. Owns the one-second clock timer, IOKit power assertions, session lifecycle (`start`, `pause`, `resume`, `stop`), IPC session registry (`ipcSessions`), effective-state computation, `UserDefaults` persistence (`saveState` / `restoreSavedState` / `saveIPCSessions` / `restoreIPCSessions`), managed policy loading, login item registration (`SMAppService`), and appearance mode management. All `@Published` properties drive the SwiftUI layer. |
 | `IPCSession.swift` | `IPCSession` | `Codable` value type representing a named IPC awake session with id, label, end date, and created date. Provides remaining-time and active-check helpers. |
 | `IPCSessionListView.swift` | `IPCSessionListView` | SwiftUI card view listing active IPC sessions below the timer hero. Each row shows the session label, compact remaining time, and a deactivate button. Renders as a tight `VStack` for 7 or fewer sessions, or wraps in a `ScrollView` when more. |
-| `MenuContentView.swift` | `MenuContentView`, `ModifierKeyObserver` | Root SwiftUI view rendered inside the `MenuBarExtra` window. Composes the header badge, `TimerHeroView`, `IPCSessionListView`, `UpdateNoticeCard`, preset grid, behavior toggle, `PolicyWarningCard`, and quit button. `ModifierKeyObserver` tracks the Option key so the action button toggles between its primary and alternate action in both active and paused states. |
+| `MenuContentView.swift` | `MenuContentView`, `ModifierKeyObserver` | Root SwiftUI view rendered inside the `MenuBarExtra` window. Composes the header badge, `TimerHeroView`, `IPCSessionListView` (when IPC sessions are active), `UpdateNoticeCard`, preset grid, `PolicyWarningCard`, and quit button. Toggles between main timer controls and a settings panel via `@State showingSettings`. `ModifierKeyObserver` tracks the Option key so the action button toggles between primary and alternate actions. |
 | `AppUpdater.swift` | `AppUpdater`, `UpdateNotice`, `UpdateNotice.Kind` | `@MainActor ObservableObject` that wraps `SPUUpdater` (the Sparkle engine) and implements both `SPUUpdaterDelegate` and `SPUUserDriver`. Translates Sparkle lifecycle callbacks into a single `@Published var notice: UpdateNotice?` value consumed by `MenuContentView`. |
-| `Components.swift` | `TimerHeroView`, `CircleActionIcon`, `PolicyWarningCard`, `UpdateNoticeCard` | Self-contained SwiftUI view components. `TimerHeroView` renders the racetrack ring progress, large countdown text, and context-sensitive action button with animated state transitions (ring progress, text crossfades, digit rolling, button scale/opacity). `CircleActionIcon` animates SF Symbol morphs via `.symbolEffect(.replace)` and fill-color transitions when the Option key toggles the action. `PolicyWarningCard` shows expandable MDM policy warnings. `UpdateNoticeCard` shows update state and action buttons. |
-| `Styles.swift` | `PresetButtonStyle`, `FooterButtonStyle`, `UpdateCardPrimaryButtonStyle`, `UpdateCardSecondaryButtonStyle` | `ButtonStyle` implementations that apply consistent rounded-rectangle material backgrounds, pressed-state scale effects, and typography to the four distinct button roles in the UI. |
-| `RacetrackRingShape.swift` | `RacetrackRingShape` | `InsettableShape` that draws a stadium/racetrack outline (two semicircles connected by straight lines). Used by `TimerHeroView` for both the track layer and the `.trim`-animated progress layer. |
-
-### `Sources/AwakeMenuBarApp/`
-
-| File | Primary types | Role |
-|---|---|---|
-| `AwakeMenuBarApp.swift` | `AwakeMenuBarApp` | `@main` App entry point. Sets activation policy to `.accessory` (no Dock icon), owns `AwakeController` and `AppUpdater` as `@StateObject`s, and declares the `MenuBarExtra` scene. The label closure renders the mug icon and optional countdown pill in the menu bar. Handles `awake://` URLs via `onOpenURL`. |
-| `AwakeURL.swift` | `AwakeURLCommand`, `parseAwakeURL(_:)` | Pure URL parser for the `awake://` scheme. Validates incoming URLs and returns typed `AwakeURLCommand` values (.activate or .deactivate) for dispatch by the app entry point. |
+| `Components.swift` | `TimerHeroView`, `CircleActionIcon`, `PolicyWarningCard`, `UpdateNoticeCard`, `SettingsGroupBox` | Self-contained SwiftUI view components. `SettingsGroupBox` wraps settings content in a material-filled rounded rectangle card. `TimerHeroView` renders the racetrack ring progress, large countdown text, and context-sensitive action button with animated state transitions. `CircleActionIcon` animates SF Symbol morphs via `.symbolEffect(.replace)` and fill-color transitions. `PolicyWarningCard` shows expandable MDM policy warnings. `UpdateNoticeCard` shows update state and action buttons. |
+| `Styles.swift` | `PresetButtonStyle`, `FooterButtonStyle`, `FooterIconButtonStyle`, `DoneButtonStyle`, `UpdateCardPrimaryButtonStyle`, `UpdateCardSecondaryButtonStyle` | `ButtonStyle` implementations for all button roles in the UI. |
+| `AwakeURL.swift` | `AwakeURLCommand`, `parseAwakeURL(_:)` | Pure URL parser for the `awake://` scheme. Validates incoming URLs and returns typed `AwakeURLCommand` values (`.activate` or `.deactivate`) for dispatch by `AwakeAppDelegate`. |
+| `RacetrackRingShape.swift` | `RacetrackRingShape` | `InsettableShape` that draws a stadium/racetrack outline. Used by `TimerHeroView` for both the track layer and the `.trim`-animated progress layer. |
 
 ---
 
@@ -117,6 +115,7 @@ Session and behavior state are persisted to `UserDefaults.standard` using four k
 | `awake.duration` | `Double` (seconds) | The full length of the session originally started. Used to compute ring progress. Cleared when the session stops. |
 | `awake.pausedRemaining` | `Double` (seconds) | The remaining time at the moment the user paused. Non-zero value takes precedence over `awake.endDate` during restore — the controller enters paused state rather than active state. |
 | `awake.sleepBehavior` | `String` (raw value of `SleepBehavior`) | Either `"keepDisplayAwake"` or `"allowDisplaySleep"`. Persisted on every behavior change. Restored unconditionally at launch. |
+| `awake.appearanceMode` | `String` (raw value of `AppearanceMode`) | One of `"system"`, `"light"`, or `"dark"`. Applied to `NSApp.appearance` at launch and whenever the user changes the picker. |
 
 Restore logic priority:
 

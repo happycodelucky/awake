@@ -7,7 +7,7 @@ import Sparkle
 
 @MainActor
 /// Wraps Sparkle update flows in menu-friendly observable state.
-public final class AppUpdater: NSObject, ObservableObject {
+final class AppUpdater: NSObject, ObservableObject {
   /// Describes the update state currently presented to the user.
   struct UpdateNotice: Equatable {
     /// Represents the updater lifecycle phases surfaced in the UI.
@@ -39,7 +39,7 @@ public final class AppUpdater: NSObject, ObservableObject {
   private var downloadReceivedLength: UInt64 = 0
 
   /// Creates and configures the Sparkle updater when the bundle supports updates.
-  public override init() {
+  override init() {
     super.init()
     configureUpdaterIfPossible()
   }
