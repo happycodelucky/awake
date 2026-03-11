@@ -9,7 +9,7 @@ import ServiceManagement
 
 @MainActor
 /// Manages timer lifecycle, power assertions, and managed policy awareness.
-public final class AwakeController: ObservableObject {
+final class AwakeController: ObservableObject {
   /// Captures a stable controller snapshot used by previews.
   struct PreviewState {
     let now: Date
@@ -180,11 +180,11 @@ public final class AwakeController: ObservableObject {
     }
   }
 
-  @Published public private(set) var now = Date()
-  @Published public private(set) var endDate: Date?
-  @Published public private(set) var sessionDuration: TimeInterval?
-  @Published public private(set) var pausedRemaining: TimeInterval?
-  @Published public private(set) var powerAssertionIsActive = false
+  @Published private(set) var now = Date()
+  @Published private(set) var endDate: Date?
+  @Published private(set) var sessionDuration: TimeInterval?
+  @Published private(set) var pausedRemaining: TimeInterval?
+  @Published private(set) var powerAssertionIsActive = false
   @Published private(set) var assertionErrorMessage: String?
   @Published private(set) var sleepBehavior: SleepBehavior = .keepDisplayAwake
   @Published private(set) var appearanceMode: AppearanceMode = .system
@@ -229,7 +229,7 @@ public final class AwakeController: ObservableObject {
   ]
 
   /// Restores persisted session state and starts the live timer loop.
-  public init() {
+  init() {
     restoreSavedState()
     applyAppearance()
     refreshManagedPolicyState(force: true)
@@ -261,19 +261,19 @@ public final class AwakeController: ObservableObject {
   }
 
   /// Indicates whether an awake session is currently running.
-  public var isActive: Bool {
+  var isActive: Bool {
     guard let endDate else { return false }
     return endDate > now
   }
 
   /// Indicates whether a session is paused with remaining time preserved.
-  public var isPaused: Bool {
+  var isPaused: Bool {
     guard let pausedRemaining else { return false }
     return pausedRemaining > 0
   }
 
   /// Indicates whether there is either an active or paused session.
-  public var hasSession: Bool {
+  var hasSession: Bool {
     isActive || isPaused
   }
 
@@ -284,7 +284,7 @@ public final class AwakeController: ObservableObject {
   }
 
   /// Returns the short status line shown in the main menu header.
-  public var pulseStatusLine: String {
+  var pulseStatusLine: String {
     if isPaused {
       return "Paused with \(formattedRemaining()) left"
     }
@@ -301,7 +301,7 @@ public final class AwakeController: ObservableObject {
   }
 
   /// Indicates whether the current behavior also prevents display sleep.
-  public var keepsDisplayAwake: Bool {
+  var keepsDisplayAwake: Bool {
     sleepBehavior == .keepDisplayAwake
   }
 
@@ -404,7 +404,7 @@ public final class AwakeController: ObservableObject {
   }
 
   /// Formats the compact countdown shown in the menu bar pill.
-  public var menuBarClockText: String {
+  var menuBarClockText: String {
     guard hasSession else { return "" }
 
     let remainingSeconds = max(0, Int(remainingInterval.rounded(.down)))
@@ -483,7 +483,7 @@ public final class AwakeController: ObservableObject {
   /// Formats the remaining session time for either the menu bar or expanded UI.
   /// - Parameter compact: Indicates whether to use a short compact format.
   /// - Returns: A human-readable remaining-time string.
-  public func formattedRemaining(compact: Bool = false) -> String {
+  func formattedRemaining(compact: Bool = false) -> String {
     let remaining = max(0, Int(remainingInterval))
     guard remaining > 0 else { return compact ? "Idle" : "00:00" }
     let hours = remaining / 3600

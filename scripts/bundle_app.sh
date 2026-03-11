@@ -133,26 +133,32 @@ if [[ -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
 fi
 
 declare -a BINARIES=()
+SPARKLE_FRAMEWORK_PATH=""
 for arch in "${ARCHS[@]}"; do
-  scratch_path="$BUILD_DIR/spm-${arch}"
+  scratch_path="$BUILD_DIR/xcode-${arch}"
   binary_path="$BUILD_DIR/${APP_NAME}-${arch}"
   BINARIES+=("$binary_path")
-  echo "Building package for ${arch}..."
-  "$SWIFT" build \
-    --package-path "$ROOT_DIR" \
-    --scratch-path "$scratch_path" \
-    -c release \
-    --arch "$arch" \
-    --product AwakeMenuBar
+  echo "Building for ${arch}..."
+  xcodebuild \
+    -project "$ROOT_DIR/Awake.xcodeproj" \
+    -scheme Awake \
+    -configuration Release \
+    -arch "$arch" \
+    -derivedDataPath "$scratch_path" \
+    MARKETING_VERSION="$VERSION" \
+    CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+    CODE_SIGN_IDENTITY="" \
+    CODE_SIGNING_REQUIRED=NO \
+    build
 
-  bin_path="$("$SWIFT" build \
-    --package-path "$ROOT_DIR" \
-    --scratch-path "$scratch_path" \
-    -c release \
-    --arch "$arch" \
-    --show-bin-path)"
+  built_app="$(find "$scratch_path" -name "Awake.app" -maxdepth 8 | head -n 1)"
+  cp "$built_app/Contents/MacOS/Awake" "$binary_path"
 
-  cp "$bin_path/AwakeMenuBar" "$binary_path"
+  # Capture Sparkle.framework from first arch build
+  if [[ -z "$SPARKLE_FRAMEWORK_PATH" ]]; then
+    candidate="$built_app/Contents/Frameworks/Sparkle.framework"
+    [[ -d "$candidate" ]] && SPARKLE_FRAMEWORK_PATH="$candidate"
+  fi
 done
 
 if [[ "${#BINARIES[@]}" -eq 1 ]]; then
@@ -164,10 +170,9 @@ fi
 
 chmod +x "$MACOS_DIR/$APP_NAME"
 
-sparkle_framework_path="$(find "$BUILD_DIR" -path "*/release/Sparkle.framework" -type d | head -n 1)"
-if [[ -n "$sparkle_framework_path" ]]; then
+if [[ -n "$SPARKLE_FRAMEWORK_PATH" ]]; then
   echo "Embedding Sparkle.framework..."
-  cp -R "$sparkle_framework_path" "$FRAMEWORKS_DIR/"
+  cp -R "$SPARKLE_FRAMEWORK_PATH" "$FRAMEWORKS_DIR/"
 fi
 
 if [[ -z "$SIGN_IDENTITY" ]]; then

@@ -50,3 +50,22 @@ struct RacetrackRingShape: InsettableShape {
     return copy
   }
 }
+
+#Preview("RacetrackRingShape") {
+  VStack(spacing: 24) {
+    RacetrackRingShape()
+      .stroke(Color.blue, lineWidth: 4)
+      .frame(width: 200, height: 60)
+
+    RacetrackRingShape()
+      .strokeBorder(Color.green, lineWidth: 8)
+      .frame(width: 200, height: 60)
+
+    RacetrackRingShape()
+      .fill(Color.orange)
+      .frame(width: 200, height: 60)
+  }
+  .padding()
+}
+
+

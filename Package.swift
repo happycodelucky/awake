@@ -1,3 +1,5 @@
+// NOTE: This Package.swift is vestigial. The active build system is Awake.xcodeproj,
+// generated from project.yml via XcodeGen. This file is retained as a reference.
 // swift-tools-version: 6.0
 import PackageDescription
 

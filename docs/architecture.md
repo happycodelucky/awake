@@ -22,22 +22,23 @@ Minimum deployment target: **macOS 15.0**. Default build target: **Apple Silicon
 
 ---
 
-## Package Structure
+## Project Structure
 
-The Swift package (`Package.swift`) is split into a library and an executable. The split keeps all UI and business logic in a testable, preview-friendly target that has no dependency on the app entry point.
+The Xcode project (`Awake.xcodeproj`) is generated from `project.yml` via XcodeGen. It contains a single App target:
 
-| Product / Target | Path | Role |
+| Target | Path | Role |
 |---|---|---|
-| `AwakeUI` (library) | `Sources/AwakeUI/` | All business logic, IOKit integration, SwiftUI views, Sparkle wrapper, and reusable components. This target can be imported by tests or tooling without an `@main` entry point. |
-| `AwakeMenuBar` (executable) | `Sources/AwakeMenuBarApp/` | Thin `@main` entry point. Creates `AwakeController` and `AppUpdater` as `@StateObject`s, declares the `MenuBarExtra` scene, and configures the activation policy. |
+| `Awake` (App) | `Sources/Awake/` | Single target containing all business logic, IOKit integration, SwiftUI views, Sparkle wrapper, reusable components, and the `@main` entry point. SwiftUI Previews are enabled via the native Xcode App target preview host. |
 
-The executable target declares `AwakeUI` as its only dependency:
+The target dependency chain:
 
 ```
-AwakeMenuBar → AwakeUI → Sparkle (conditional)
+Awake → Sparkle (SPM remote package, conditional at runtime)
 ```
 
-Sparkle is a dependency of `AwakeUI`, not the executable. This means the library controls all update integration.
+`Package.swift` is retained as a vestigial reference but is not used by the active build system. The active build is driven by `Awake.xcodeproj` via `xcodebuild`.
+
+All source files are in `Sources/Awake/`. There are no cross-module `public` access modifiers — all types use the default internal access level within the single module.
 
 ---
 
@@ -56,22 +57,17 @@ Sparkle is a dependency of `AwakeUI`, not the executable. This means the library
 
 ## Source Files
 
-### `Sources/AwakeUI/`
+All source files live in `Sources/Awake/`.
 
 | File | Primary types | Role |
 |---|---|---|
+| `AwakeMenuBarApp.swift` | `AwakeMenuBarApp` | `@main` App entry point. Sets activation policy to `.accessory` (no Dock icon), owns `AwakeController` and `AppUpdater` as `@StateObject`s, and declares the `MenuBarExtra` scene. The label closure renders the mug icon and optional countdown pill in the menu bar. |
 | `AwakeController.swift` | `AwakeController`, `ManagedPolicyState`, `BehaviorPolicyNotice`, `SleepBehavior`, `AppearanceMode` | Central `@MainActor ObservableObject`. Owns the one-second clock timer, IOKit power assertions, session lifecycle (`start`, `pause`, `resume`, `stop`), `UserDefaults` persistence (`saveState` / `restoreSavedState`), managed policy loading, login item registration (`SMAppService`), and appearance mode management. All `@Published` properties drive the SwiftUI layer. |
 | `MenuContentView.swift` | `MenuContentView`, `ModifierKeyObserver` | Root SwiftUI view rendered inside the `MenuBarExtra` window. Composes the header badge, `TimerHeroView`, `UpdateNoticeCard`, preset grid, `PolicyWarningCard`, and quit button. Toggles between main timer controls and a settings panel via `@State showingSettings`. The settings view contains grouped sections for General (login item), Appearance (theme mode), Behavior (display sleep toggle), and a placeholder MCP Server section. `ModifierKeyObserver` tracks the Option key so the action button toggles between its primary and alternate action in both active and paused states. |
 | `AppUpdater.swift` | `AppUpdater`, `UpdateNotice`, `UpdateNotice.Kind` | `@MainActor ObservableObject` that wraps `SPUUpdater` (the Sparkle engine) and implements both `SPUUpdaterDelegate` and `SPUUserDriver`. Translates Sparkle lifecycle callbacks into a single `@Published var notice: UpdateNotice?` value consumed by `MenuContentView`. |
 | `Components.swift` | `TimerHeroView`, `CircleActionIcon`, `PolicyWarningCard`, `UpdateNoticeCard`, `SettingsGroupBox` | Self-contained SwiftUI view components. `SettingsGroupBox` wraps settings content in a material-filled rounded rectangle card matching the existing card pattern. `TimerHeroView` renders the racetrack ring progress, large countdown text, and context-sensitive action button with animated state transitions (ring progress, text crossfades, digit rolling, button scale/opacity). `CircleActionIcon` animates SF Symbol morphs via `.symbolEffect(.replace)` and fill-color transitions when the Option key toggles the action. `PolicyWarningCard` shows expandable MDM policy warnings. `UpdateNoticeCard` shows update state and action buttons. |
 | `Styles.swift` | `PresetButtonStyle`, `FooterButtonStyle`, `FooterIconButtonStyle`, `DoneButtonStyle`, `UpdateCardPrimaryButtonStyle`, `UpdateCardSecondaryButtonStyle` | `ButtonStyle` implementations that apply consistent rounded-rectangle material backgrounds, pressed-state scale effects, and typography to the distinct button roles in the UI. `DoneButtonStyle` uses a blue filled background with white text for the settings Done button. |
 | `RacetrackRingShape.swift` | `RacetrackRingShape` | `InsettableShape` that draws a stadium/racetrack outline (two semicircles connected by straight lines). Used by `TimerHeroView` for both the track layer and the `.trim`-animated progress layer. |
-
-### `Sources/AwakeMenuBarApp/`
-
-| File | Primary types | Role |
-|---|---|---|
-| `AwakeMenuBarApp.swift` | `AwakeMenuBarApp` | `@main` App entry point. Sets activation policy to `.accessory` (no Dock icon), owns `AwakeController` and `AppUpdater` as `@StateObject`s, and declares the `MenuBarExtra` scene. The label closure renders the mug icon and optional countdown pill in the menu bar. |
 
 ---
 

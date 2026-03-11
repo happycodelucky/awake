@@ -37,7 +37,7 @@ final class ModifierKeyObserver: ObservableObject {
 }
 
 /// Renders the menu bar popover content for timer control, settings, and updates.
-public struct MenuContentView: View {
+struct MenuContentView: View {
   @ObservedObject var controller: AwakeController
   @ObservedObject var updater: AppUpdater
   @Environment(\.colorScheme) private var colorScheme
@@ -53,7 +53,7 @@ public struct MenuContentView: View {
   /// Builds the full menu content shown from the menu bar extra.
   /// The header and hero timer are always visible. Below them, the view
   /// conditionally shows either the main timer controls or the settings panel.
-  public var body: some View {
+  var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       VStack(alignment: .leading, spacing: 4) {
         HStack(alignment: .top) {
@@ -98,7 +98,7 @@ public struct MenuContentView: View {
   /// - Parameters:
   ///   - controller: The timer controller backing the UI.
   ///   - updater: The updater state backing update notices.
-  public init(controller: AwakeController, updater: AppUpdater) {
+  init(controller: AwakeController, updater: AppUpdater) {
     self.controller = controller
     self.updater = updater
   }
