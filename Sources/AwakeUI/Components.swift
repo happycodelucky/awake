@@ -1,6 +1,6 @@
 // MARK: - Components
 // Reusable view components: TimerHeroView, CircleActionIcon,
-// PolicyWarningCard, and UpdateNoticeCard.
+// PolicyWarningCard, UpdateNoticeCard, and SettingsGroupBox.
 
 import SwiftUI
 
@@ -261,6 +261,32 @@ struct UpdateNoticeCard: View {
       RoundedRectangle(cornerRadius: 14, style: .continuous)
         .strokeBorder(Color.blue.opacity(0.24))
     )
+  }
+}
+
+/// Wraps settings content in a card-style container matching
+/// the existing `PolicyWarningCard` / `UpdateNoticeCard` visual pattern.
+struct SettingsGroupBox<Content: View>: View {
+  let content: Content
+
+  /// Creates a settings group box with the provided content.
+  /// - Parameter content: The settings controls to display inside the card.
+  init(@ViewBuilder content: () -> Content) {
+    self.content = content()
+  }
+
+  /// Builds the card container with material background and subtle border.
+  var body: some View {
+    content
+      .padding(14)
+      .background(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+          .fill(.regularMaterial)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+          .strokeBorder(Color.secondary.opacity(0.12))
+      )
   }
 }
 

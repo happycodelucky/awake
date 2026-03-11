@@ -1,5 +1,5 @@
 // MARK: - MenuContentView
-// Menu bar popover layout: preset grid, timer hero, behavior toggle,
+// Menu bar popover layout: preset grid, timer hero, settings panel,
 // policy warnings, update notices, and modifier-key observation.
 
 import AppKit
@@ -36,12 +36,13 @@ final class ModifierKeyObserver: ObservableObject {
   }
 }
 
-/// Renders the menu bar popover content for timer control, behavior, and updates.
+/// Renders the menu bar popover content for timer control, settings, and updates.
 public struct MenuContentView: View {
   @ObservedObject var controller: AwakeController
   @ObservedObject var updater: AppUpdater
   @Environment(\.colorScheme) private var colorScheme
   @StateObject private var modifierKeys = ModifierKeyObserver()
+  @State private var showingSettings = false
 
   private let columns = [
     GridItem(.flexible(), spacing: 8),
@@ -50,24 +51,24 @@ public struct MenuContentView: View {
   ]
 
   /// Builds the full menu content shown from the menu bar extra.
+  /// The header and hero timer are always visible. Below them, the view
+  /// conditionally shows either the main timer controls or the settings panel.
   public var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       VStack(alignment: .leading, spacing: 4) {
         HStack(alignment: .top) {
           Text("Awake")
             .font(.system(size: 18, weight: .semibold, design: .rounded))
-          
-            Spacer(minLength: 12)
-            Label(statusTitle, systemImage: statusSymbol)
-              .font(.system(size: 12, weight: .semibold, design: .rounded))
-              .foregroundStyle(statusStyle)
-          
+
+          Spacer(minLength: 12)
+          Label(statusTitle, systemImage: statusSymbol)
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .foregroundStyle(statusStyle)
         }
-          Text(controller.pulseStatusLine)
-              .lineLimit(2)
-            .font(.system(size: 12, weight: .medium, design: .rounded))
-            .foregroundStyle(.secondary)
-            
+        Text(controller.pulseStatusLine)
+          .lineLimit(2)
+          .font(.system(size: 12, weight: .medium, design: .rounded))
+          .foregroundStyle(.secondary)
       }
 
       TimerHeroView(
@@ -80,104 +81,10 @@ public struct MenuContentView: View {
         actionButton: AnyView(heroActionButton)
       ).padding([.vertical], 8)
 
-      VStack(alignment: .leading, spacing: 10) {
-        Text("Presets")
-          .font(.system(size: 11, weight: .semibold, design: .rounded))
-          .foregroundStyle(.secondary)
-          .textCase(.uppercase)
-          .tracking(1.4)
-
-        LazyVGrid(columns: columns, spacing: 8) {
-          ForEach(controller.presets) { preset in
-            Button {
-              controller.start(minutes: preset.minutes)
-            } label: {
-              VStack(spacing: 2) {
-                Text(preset.shortLabel)
-                  .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text(preset.mode)
-                  .font(.system(size: 11, weight: .medium, design: .rounded))
-                  .foregroundStyle(.secondary)
-              }
-              .frame(maxWidth: .infinity)
-              .frame(height: 54)
-            }
-            .buttonStyle(PresetButtonStyle())
-          }
-        }
-      }
-
-      if let notice = updater.notice {
-        VStack(alignment: .leading, spacing: 10) {
-          Text("Update")
-            .font(.system(size: 11, weight: .semibold, design: .rounded))
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
-            .tracking(1.4)
-
-          UpdateNoticeCard(
-            notice: notice,
-            primaryAction: { updater.installUpdate() },
-            secondaryAction: { updater.dismissNotice() }
-          )
-        }
-      }
-
-      VStack(alignment: .leading, spacing: 8) {
-        Text("Behavior")
-          .font(.system(size: 11, weight: .semibold, design: .rounded))
-          .foregroundStyle(.secondary)
-          .textCase(.uppercase)
-          .tracking(1.4)
-
-        if let policyNotice = controller.behaviorPolicyNotice {
-          PolicyWarningCard(
-            title: policyNotice.title,
-            known: policyNotice.known,
-            possible: policyNotice.possible
-          )
-        }
-
-        Toggle(isOn: keepDisplayAwakeBinding) {
-          VStack(alignment: .leading, spacing: 2) {
-            Text("Keep display awake")
-              .font(.system(size: 13, weight: .semibold, design: .rounded))
-            Text(
-              "Turn off for long background runs when the Mac should stay awake but the screen can sleep."
-            )
-            .font(.system(size: 11, weight: .medium, design: .rounded))
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-          }
-        }
-        .toggleStyle(.switch)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(
-          RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(.regularMaterial)
-        )
-        .overlay(
-          RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .strokeBorder(Color.secondary.opacity(0.12))
-        )
-      }
-
-      HStack(spacing: 8) {
-        Button("Quit") {
-          NSApplication.shared.terminate(nil)
-        }
-        .frame(maxWidth: .infinity)
-        .buttonStyle(FooterButtonStyle())
-
-        /// Settings button — placeholder for future settings UI.
-        Button {
-          // TODO: Open settings
-        } label: {
-          Image(systemName: "gearshape.fill")
-        }
-        .buttonStyle(FooterIconButtonStyle())
-        .help("Settings")
+      if showingSettings {
+        settingsContent
+      } else {
+        mainContent
       }
     }
     .padding(14)
@@ -254,11 +161,240 @@ public struct MenuContentView: View {
     return "Choose a timer to begin"
   }
 
+  // MARK: - Main content
+
+  /// Builds the main timer control content: presets, update notice, policy
+  /// warnings, and footer with Quit / Settings buttons.
+  @ViewBuilder
+  private var mainContent: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text("Presets")
+        .font(.system(size: 11, weight: .semibold, design: .rounded))
+        .foregroundStyle(.secondary)
+        .textCase(.uppercase)
+        .tracking(1.4)
+
+      LazyVGrid(columns: columns, spacing: 8) {
+        ForEach(controller.presets) { preset in
+          Button {
+            controller.start(minutes: preset.minutes)
+          } label: {
+            VStack(spacing: 2) {
+              Text(preset.shortLabel)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+              Text(preset.mode)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 54)
+          }
+          .buttonStyle(PresetButtonStyle())
+        }
+      }
+    }
+
+    if let notice = updater.notice {
+      VStack(alignment: .leading, spacing: 10) {
+        Text("Update")
+          .font(.system(size: 11, weight: .semibold, design: .rounded))
+          .foregroundStyle(.secondary)
+          .textCase(.uppercase)
+          .tracking(1.4)
+
+        UpdateNoticeCard(
+          notice: notice,
+          primaryAction: { updater.installUpdate() },
+          secondaryAction: { updater.dismissNotice() }
+        )
+      }
+    }
+
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Behavior")
+        .font(.system(size: 11, weight: .semibold, design: .rounded))
+        .foregroundStyle(.secondary)
+        .textCase(.uppercase)
+        .tracking(1.4)
+
+      if let policyNotice = controller.behaviorPolicyNotice {
+        PolicyWarningCard(
+          title: policyNotice.title,
+          known: policyNotice.known,
+          possible: policyNotice.possible
+        )
+      }
+
+        Toggle(isOn: keepDisplayAwakeBinding) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Keep display awake")
+              .font(.system(size: 13, weight: .semibold, design: .rounded))
+            Text(
+              "Turn off for long background runs when the Mac should stay awake but the screen can sleep."
+            )
+            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+          }
+        }
+        .toggleStyle(.switch)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+          RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(.regularMaterial)
+        )
+        .overlay(
+          RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .strokeBorder(Color.secondary.opacity(0.12))
+        )
+    }
+
+    HStack(spacing: 8) {
+      Button("Quit") {
+        NSApplication.shared.terminate(nil)
+      }
+      .frame(maxWidth: .infinity)
+      .buttonStyle(FooterButtonStyle())
+
+      Button {
+        showingSettings = true
+      } label: {
+        Image(systemName: "gearshape.fill")
+      }
+      .buttonStyle(FooterIconButtonStyle())
+      .help("Settings")
+    }
+  }
+
+  // MARK: - Settings content
+
+  /// Builds the settings panel with grouped sections for General and
+  /// MCP Server. Shown when the gear icon is tapped.
+  @ViewBuilder
+  private var settingsContent: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      // --- General (login item + appearance) ---
+      settingsSection("General") {
+        SettingsGroupBox {
+          VStack(alignment: .leading, spacing: 12) {
+            Toggle(isOn: launchAtLoginBinding) {
+              VStack(alignment: .leading, spacing: 2) {
+                Text("Start at login")
+                  .font(.system(size: 13, weight: .semibold, design: .rounded))
+                Text("Automatically launch Awake when you log in to your Mac.")
+                  .font(.system(size: 11, weight: .medium, design: .rounded))
+                  .foregroundStyle(.secondary)
+                  .fixedSize(horizontal: false, vertical: true)
+              }
+            }
+            .toggleStyle(.switch)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 6) {
+              Text("Appearance")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+
+              Picker("Theme", selection: appearanceModeBinding) {
+                ForEach(AwakeController.AppearanceMode.allCases, id: \.self) { mode in
+                  Text(mode.label).tag(mode)
+                }
+              }
+              .pickerStyle(.segmented)
+            }
+          }
+        }
+      }
+
+      // --- MCP Server (placeholder) ---
+      settingsSection("MCP Server") {
+        SettingsGroupBox {
+          VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: .constant(false)) {
+              VStack(alignment: .leading, spacing: 2) {
+                Text("Enable MCP server")
+                  .font(.system(size: 13, weight: .semibold, design: .rounded))
+                Text(
+                  "Allow AI agents to control Awake sessions over the Model Context Protocol."
+                )
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+              }
+            }
+            .toggleStyle(.switch)
+            .disabled(true)
+
+            HStack {
+              Text("Port")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+              Spacer()
+              TextField("", text: .constant("9432"))
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .frame(width: 60)
+                .textFieldStyle(.roundedBorder)
+            }
+            .disabled(true)
+
+            Text("Coming soon")
+              .font(.system(size: 11, weight: .medium, design: .rounded))
+              .foregroundStyle(.tertiary)
+          }
+        }
+        .opacity(0.6)
+      }
+
+      // --- Done ---
+      Button("Done") {
+        showingSettings = false
+      }
+      .buttonStyle(DoneButtonStyle())
+    }
+  }
+
+  /// Builds a labelled settings section with a section heading and content.
+  /// - Parameters:
+  ///   - title: The section heading text.
+  ///   - content: The section content.
+  private func settingsSection<Content: View>(
+    _ title: String,
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(title)
+        .font(.system(size: 11, weight: .semibold, design: .rounded))
+        .foregroundStyle(.secondary)
+        .textCase(.uppercase)
+        .tracking(1.4)
+
+      content()
+    }
+  }
+
+  // MARK: - Bindings
+
   /// Bridges controller sleep behavior into a toggle-friendly binding.
   private var keepDisplayAwakeBinding: Binding<Bool> {
     Binding(
       get: { controller.keepsDisplayAwake },
       set: { controller.setKeepsDisplayAwake($0) }
+    )
+  }
+
+  /// Bridges controller launch-at-login state into a toggle-friendly binding.
+  private var launchAtLoginBinding: Binding<Bool> {
+    Binding(
+      get: { controller.launchAtLogin },
+      set: { controller.setLaunchAtLogin($0) }
+    )
+  }
+
+  /// Bridges controller appearance mode into a picker-friendly binding.
+  private var appearanceModeBinding: Binding<AwakeController.AppearanceMode> {
+    Binding(
+      get: { controller.appearanceMode },
+      set: { controller.setAppearanceMode($0) }
     )
   }
 
