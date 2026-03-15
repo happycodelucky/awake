@@ -14,6 +14,8 @@ struct TimerHeroView<ActionButton: View>: View {
   let colorScheme: ColorScheme
   @ViewBuilder let actionButton: ActionButton
 
+  @Environment(\.designTokens) var designTokens
+
   /// Creates the timer hero view.
   /// - Parameters:
   ///   - timeText: Formatted remaining time string.
@@ -56,7 +58,7 @@ struct TimerHeroView<ActionButton: View>: View {
 
       VStack(spacing: 6) {
         Text(statusText)
-          .font(.system(size: 12, weight: .bold, design: .rounded))
+          .font(designTokens.typography.labelLarge)
           .tracking(1.8)
           .foregroundStyle(.secondary)
           .contentTransition(.opacity)
@@ -64,8 +66,7 @@ struct TimerHeroView<ActionButton: View>: View {
 
         HStack(alignment: .center, spacing: 12) {
           Text(timeText)
-            .font(.system(size: 46, weight: .heavy, design: .rounded))
-            .monospacedDigit()
+            .font(designTokens.typography.monospaceDisplayLarge)
             .lineLimit(1)
             .minimumScaleFactor(0.55)
             .allowsTightening(true)
@@ -79,7 +80,7 @@ struct TimerHeroView<ActionButton: View>: View {
         .fixedSize(horizontal: false, vertical: true)
 
         Text(detailText)
-          .font(.system(size: 12, weight: .medium, design: .rounded))
+          .font(designTokens.typography.bodyMedium)
           .foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
           .contentTransition(.opacity)
@@ -99,7 +100,7 @@ struct TimerHeroView<ActionButton: View>: View {
   /// Returns the gradient style used for the active progress segment.
   private var progressStyle: LinearGradient {
     LinearGradient(
-      colors: colorScheme == .dark ? [Color.cyan, Color.green] : [Color.blue, Color.teal],
+      colors: colorScheme == .dark ? [Color.cyan, Color.green] : [Color.accentColor, Color.teal],
       startPoint: .topLeading,
       endPoint: .bottomTrailing
     )
@@ -135,6 +136,8 @@ struct PolicyWarningCard: View {
   let possible: [String]
   @State private var isExpanded = false
 
+  @Environment(\.designTokens) var designTokens
+
   /// Builds the expandable policy warning card. Starts collapsed showing
   /// only the title and disclaimer. Tapping "More" reveals Known (confirmed
   /// active) and Likely (conditional) policy details.
@@ -147,13 +150,13 @@ struct PolicyWarningCard: View {
 
         VStack(alignment: .leading, spacing: 3) {
           Text(title)
-            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .font(designTokens.typography.cardTitle)
             .lineLimit(2)
             .fixedSize(horizontal: false, vertical: true)
           Text(
             "Awake can prevent idle sleep, but it cannot guarantee bypassing managed lock or logout policies."
           )
-          .font(.system(size: 11, weight: .medium, design: .rounded))
+          .font(designTokens.typography.cardBody)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
         }
@@ -164,7 +167,7 @@ struct PolicyWarningCard: View {
       } label: {
         HStack(spacing: 6) {
           Text(isExpanded ? "Less" : "More")
-            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .font(designTokens.typography.labelMedium)
           Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
             .font(.system(size: 10, weight: .bold))
         }
@@ -180,7 +183,7 @@ struct PolicyWarningCard: View {
         if !known.isEmpty {
           VStack(alignment: .leading, spacing: 4) {
             Text("Known")
-              .font(.system(size: 10, weight: .bold, design: .rounded))
+              .font(designTokens.typography.labelSmall)
               .tracking(1.1)
               .foregroundStyle(.secondary)
 
@@ -193,7 +196,7 @@ struct PolicyWarningCard: View {
         if !possible.isEmpty {
           VStack(alignment: .leading, spacing: 4) {
             Text("Likely")
-              .font(.system(size: 10, weight: .bold, design: .rounded))
+              .font(designTokens.typography.labelSmall)
               .tracking(1.1)
               .foregroundStyle(.secondary)
 
@@ -225,7 +228,7 @@ struct PolicyWarningCard: View {
         .padding(.top, 6)
 
       Text(message)
-        .font(.system(size: 11, weight: .medium, design: .rounded))
+        .font(designTokens.typography.cardBody)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -238,22 +241,24 @@ struct UpdateNoticeCard: View {
   let primaryAction: () -> Void
   let secondaryAction: () -> Void
 
+  @Environment(\.designTokens) var designTokens
+
   /// Builds the UI for the active updater notice.
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack(alignment: .top, spacing: 10) {
         Image(systemName: "arrow.trianglehead.2.clockwise.rotate.90.circle.fill")
           .font(.system(size: 15, weight: .semibold))
-          .foregroundStyle(.blue)
+          .foregroundStyle(designTokens.colors.info)
 
         VStack(alignment: .leading, spacing: 3) {
           Text(notice.title)
-            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .font(designTokens.typography.cardTitle)
             .lineLimit(2)
             .fixedSize(horizontal: false, vertical: true)
 
           Text(notice.message)
-            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .font(designTokens.typography.cardBody)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -262,7 +267,7 @@ struct UpdateNoticeCard: View {
       if case .downloading(let progress) = notice.kind, let progress {
         ProgressView(value: progress)
           .progressViewStyle(.linear)
-          .tint(.blue)
+          .tint(designTokens.colors.info)
       }
 
       HStack(spacing: 8) {
@@ -280,11 +285,11 @@ struct UpdateNoticeCard: View {
     .padding(14)
     .background(
       RoundedRectangle(cornerRadius: 14, style: .continuous)
-        .fill(Color.blue.opacity(0.08))
+        .fill(designTokens.colors.infoCardBackground)
     )
     .overlay(
       RoundedRectangle(cornerRadius: 14, style: .continuous)
-        .strokeBorder(Color.blue.opacity(0.24))
+        .strokeBorder(designTokens.colors.infoCardStroke)
     )
   }
 }
@@ -316,7 +321,7 @@ struct SettingsGroupBox<Content: View>: View {
 }
 
 #if DEBUG
-  private let previewPolicyState = AwakeSessionManager.ManagedPolicyState(
+  private let previewPolicyState = KeepAwakeSessionsManager.ManagedPolicyState(
     screenSaverIdleTime: 900,
     loginWindowIdleTime: 300,
     asksForPasswordAfterScreenSaver: true,
@@ -374,14 +379,14 @@ struct SettingsGroupBox<Content: View>: View {
   #Preview("Policy Warning") {
     PolicyWarningCard(
       title: "Managed policies can end or interrupt long idle sessions",
-      known: AwakeSessionManager(
+      known: KeepAwakeSessionsManager(
         previewState: .active(
           remaining: 11 * 3600 + 59 * 60,
           sessionDuration: 12 * 3600,
           policyState: previewPolicyState
         )
       ).behaviorPolicyNotice?.known ?? [],
-      possible: AwakeSessionManager(
+      possible: KeepAwakeSessionsManager(
         previewState: .active(
           remaining: 11 * 3600 + 59 * 60,
           sessionDuration: 12 * 3600,

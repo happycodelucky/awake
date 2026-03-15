@@ -38,17 +38,21 @@ final class ModifierKeyObserver: ObservableObject {
 
 /// Renders the menu bar popover content for timer control, settings, and updates.
 struct MenuContentView: View {
-  @ObservedObject var manager: AwakeSessionManager
+  @ObservedObject var manager: KeepAwakeSessionsManager
   @ObservedObject var updater: AppUpdater
   @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.designTokens) private var designTokens
   @StateObject private var modifierKeys = ModifierKeyObserver()
   @State private var showingSettings = false
 
-  private let columns = [
-    GridItem(.flexible(), spacing: 8),
-    GridItem(.flexible(), spacing: 8),
-    GridItem(.flexible(), spacing: 8),
-  ]
+  private var columns: [GridItem] {
+    let spacing = designTokens.spacing.sm
+    return [
+      GridItem(.flexible(), spacing: spacing),
+      GridItem(.flexible(), spacing: spacing),
+      GridItem(.flexible(), spacing: spacing),
+    ]
+  }
 
   /// Builds the full menu content shown from the menu bar extra.
   /// The header and hero timer are always visible. Below them, the view
@@ -58,16 +62,16 @@ struct MenuContentView: View {
       VStack(alignment: .leading, spacing: 4) {
         HStack(alignment: .top) {
           Text("Awake")
-            .font(.system(size: 18, weight: .semibold, design: .rounded))
+            .font(designTokens.typography.titleLarge)
 
           Spacer(minLength: 12)
           Label(statusTitle, systemImage: statusSymbol)
-            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .font(designTokens.typography.labelMedium)
             .foregroundStyle(statusStyle)
         }
         Text(manager.pulseStatusLine)
           .lineLimit(2)
-          .font(.system(size: 12, weight: .medium, design: .rounded))
+          .font(designTokens.typography.bodyMedium)
           .foregroundStyle(.secondary)
       }
 
@@ -96,9 +100,9 @@ struct MenuContentView: View {
 
   /// Creates the menu content view.
   /// - Parameters:
-  ///   - controller: The timer controller backing the UI.
+  ///   - manager: The session manager backing the UI.
   ///   - updater: The updater state backing update notices.
-  init(manager: AwakeSessionManager, updater: AppUpdater) {
+  init(manager: KeepAwakeSessionsManager, updater: AppUpdater) {
     self.manager = manager
     self.updater = updater
   }
@@ -106,7 +110,7 @@ struct MenuContentView: View {
   /// Returns the accent gradient shared by active-state treatments.
   private var accentGradient: LinearGradient {
     LinearGradient(
-      colors: colorScheme == .dark ? [Color.cyan, Color.green] : [Color.blue, Color.teal],
+      colors: colorScheme == .dark ? [Color.cyan, Color.green] : [Color.accentColor, Color.teal],
       startPoint: .topLeading,
       endPoint: .bottomTrailing
     )
@@ -143,7 +147,7 @@ struct MenuContentView: View {
       return "Resume or Hold ⌥ to stop"
     }
     if manager.isActive {
-      // AGENT: When only IPC sessions are active (no app session), show a
+      // AGENT: When only external sessions are active (no app session), show a
       // hint that external callers are driving the awake state.
       if !manager.hasAppSession && manager.hasIPCSessions {
         return "Kept awake by external sessions"
@@ -162,16 +166,20 @@ struct MenuContentView: View {
   @ViewBuilder
   private var mainContent: some View {
     if manager.hasIPCSessions {
-      IPCSessionListView(
+      KeepAwakeSessionList(
         sessions: Array(manager.ipcSessions.values).sorted(by: { $0.endDate > $1.endDate }),
         now: manager.now,
-        onDeactivate: { manager.deactivateIPCSession(id: $0) }
+        // AGENT: withAnimation wraps the deactivation mutation so SwiftUI
+        // runs the row's .transition removal animation. Without this wrapper
+        // the @Published change fires outside any animation transaction and
+        // the row disappears instantly.
+        onDeactivate: { id in withAnimation { manager.deactivateIPCSession(id: id) } }
       )
     }
 
     VStack(alignment: .leading, spacing: 10) {
       Text("Presets")
-        .font(.system(size: 11, weight: .semibold, design: .rounded))
+        .font(designTokens.typography.sectionHeader)
         .foregroundStyle(.secondary)
         .textCase(.uppercase)
         .tracking(1.4)
@@ -183,9 +191,9 @@ struct MenuContentView: View {
           } label: {
             VStack(spacing: 2) {
               Text(preset.shortLabel)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .font(designTokens.typography.titleMedium)
               Text(preset.mode)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .font(designTokens.typography.bodySmall)
                 .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity)
@@ -199,7 +207,7 @@ struct MenuContentView: View {
     if let notice = updater.notice {
       VStack(alignment: .leading, spacing: 10) {
         Text("Update")
-          .font(.system(size: 11, weight: .semibold, design: .rounded))
+          .font(designTokens.typography.sectionHeader)
           .foregroundStyle(.secondary)
           .textCase(.uppercase)
           .tracking(1.4)
@@ -214,7 +222,7 @@ struct MenuContentView: View {
 
     VStack(alignment: .leading, spacing: 8) {
       Text("Behavior")
-        .font(.system(size: 11, weight: .semibold, design: .rounded))
+        .font(designTokens.typography.sectionHeader)
         .foregroundStyle(.secondary)
         .textCase(.uppercase)
         .tracking(1.4)
@@ -230,11 +238,11 @@ struct MenuContentView: View {
         Toggle(isOn: keepDisplayAwakeBinding) {
           VStack(alignment: .leading, spacing: 2) {
             Text("Keep display awake")
-              .font(.system(size: 13, weight: .semibold, design: .rounded))
+              .font(designTokens.typography.titleSmall)
             Text(
               "Turn off for long background runs when the Mac should stay awake but the screen can sleep."
             )
-            .font(.system(size: 11, weight: .medium, design: .rounded))
+            .font(designTokens.typography.bodySmall)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
           }
@@ -281,9 +289,9 @@ struct MenuContentView: View {
             Toggle(isOn: launchAtLoginBinding) {
               VStack(alignment: .leading, spacing: 2) {
                 Text("Start at login")
-                  .font(.system(size: 13, weight: .semibold, design: .rounded))
+                  .font(designTokens.typography.titleSmall)
                 Text("Automatically launch Awake when you log in to your Mac.")
-                  .font(.system(size: 11, weight: .medium, design: .rounded))
+                  .font(designTokens.typography.bodySmall)
                   .foregroundStyle(.secondary)
                   .fixedSize(horizontal: false, vertical: true)
               }
@@ -294,10 +302,10 @@ struct MenuContentView: View {
 
             VStack(alignment: .leading, spacing: 6) {
               Text("Appearance")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(designTokens.typography.titleSmall)
 
               Picker("Theme", selection: appearanceModeBinding) {
-                ForEach(AwakeSessionManager.AppearanceMode.allCases, id: \.self) { mode in
+                ForEach(KeepAwakeSessionsManager.AppearanceMode.allCases, id: \.self) { mode in
                   Text(mode.label).tag(mode)
                 }
               }
@@ -314,11 +322,11 @@ struct MenuContentView: View {
             Toggle(isOn: .constant(false)) {
               VStack(alignment: .leading, spacing: 2) {
                 Text("Enable MCP server")
-                  .font(.system(size: 13, weight: .semibold, design: .rounded))
+                  .font(designTokens.typography.titleSmall)
                 Text(
                   "Allow AI agents to control Awake sessions over the Model Context Protocol."
                 )
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .font(designTokens.typography.bodySmall)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
               }
@@ -328,17 +336,17 @@ struct MenuContentView: View {
 
             HStack {
               Text("Port")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .font(designTokens.typography.titleSmall)
               Spacer()
               TextField("", text: .constant("9432"))
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .font(designTokens.typography.titleSmall)
                 .frame(width: 60)
                 .textFieldStyle(.roundedBorder)
             }
             .disabled(true)
 
             Text("Coming soon")
-              .font(.system(size: 11, weight: .medium, design: .rounded))
+              .font(designTokens.typography.bodySmall)
               .foregroundStyle(.tertiary)
           }
         }
@@ -363,7 +371,7 @@ struct MenuContentView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: 8) {
       Text(title)
-        .font(.system(size: 11, weight: .semibold, design: .rounded))
+        .font(designTokens.typography.sectionHeader)
         .foregroundStyle(.secondary)
         .textCase(.uppercase)
         .tracking(1.4)
@@ -391,7 +399,7 @@ struct MenuContentView: View {
   }
 
   /// Bridges controller appearance mode into a picker-friendly binding.
-  private var appearanceModeBinding: Binding<AwakeSessionManager.AppearanceMode> {
+  private var appearanceModeBinding: Binding<KeepAwakeSessionsManager.AppearanceMode> {
     Binding(
       get: { manager.appearanceMode },
       set: { manager.setAppearanceMode($0) }
@@ -443,7 +451,7 @@ struct MenuContentView: View {
 #if DEBUG
   /// Wraps the menu content in a preview-friendly container.
   private struct MenuContentPreviewContainer: View {
-    let manager: AwakeSessionManager
+    let manager: KeepAwakeSessionsManager
     let updater: AppUpdater
 
     /// Builds the preview container layout.
@@ -454,7 +462,7 @@ struct MenuContentView: View {
     }
   }
 
-  private let previewManagedPolicyState = AwakeSessionManager.ManagedPolicyState(
+  private let previewManagedPolicyState = KeepAwakeSessionsManager.ManagedPolicyState(
     screenSaverIdleTime: 900,
     loginWindowIdleTime: 300,
     asksForPasswordAfterScreenSaver: true,
@@ -465,14 +473,14 @@ struct MenuContentView: View {
 
   #Preview("Menu · Timer Off") {
     MenuContentPreviewContainer(
-      manager: AwakeSessionManager(previewState: .idle()),
+      manager: KeepAwakeSessionsManager(previewState: .idle()),
       updater: AppUpdater(previewNotice: nil)
     )
   }
 
   #Preview("Menu · 2h Timer") {
     MenuContentPreviewContainer(
-      manager: AwakeSessionManager(
+      manager: KeepAwakeSessionsManager(
         previewState: .active(
           remaining: 2 * 3600,
           sessionDuration: 2 * 3600
@@ -483,7 +491,7 @@ struct MenuContentView: View {
 
   #Preview("Menu · 11:59 with Policy Warning") {
     MenuContentPreviewContainer(
-      manager: AwakeSessionManager(
+      manager: KeepAwakeSessionsManager(
         previewState: .active(
           remaining: 11 * 3600 + 59 * 60,
           sessionDuration: 12 * 3600,
@@ -495,7 +503,7 @@ struct MenuContentView: View {
 
   #Preview("Menu · 29s Remaining") {
     MenuContentPreviewContainer(
-      manager: AwakeSessionManager(
+      manager: KeepAwakeSessionsManager(
         previewState: .active(
           remaining: 29,
           sessionDuration: 30 * 60,
@@ -508,7 +516,7 @@ struct MenuContentView: View {
 
   #Preview("Menu · Paused") {
     MenuContentPreviewContainer(
-      manager: AwakeSessionManager(
+      manager: KeepAwakeSessionsManager(
         previewState: .paused(
           remaining: 2 * 3600,
           sessionDuration: 4 * 3600
@@ -519,7 +527,7 @@ struct MenuContentView: View {
 
   #Preview("Menu · Update Alert") {
     MenuContentPreviewContainer(
-      manager: AwakeSessionManager(
+      manager: KeepAwakeSessionsManager(
         previewState: .active(
           remaining: 45 * 60,
           sessionDuration: 60 * 60
@@ -536,3 +544,4 @@ struct MenuContentView: View {
     )
   }
 #endif
+

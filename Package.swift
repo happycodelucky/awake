@@ -4,37 +4,26 @@
 import PackageDescription
 
 let package = Package(
-    name: "AwakeMenuBar",
+    name: "Awake",
     platforms: [
         .macOS(.v15)
     ],
     products: [
-        .library(
-            name: "AwakeUI",
-            targets: ["AwakeUI"]
-        ),
         .executable(
-            name: "AwakeMenuBar",
-            targets: ["AwakeMenuBar"]
+            name: "Awake",
+            targets: ["Awake"]
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.8.0")
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0")
     ],
     targets: [
-        .target(
-            name: "AwakeUI",
+        .executableTarget(
+            name: "Awake",
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle")
             ],
-            path: "Sources/AwakeUI"
-        ),
-        .executableTarget(
-            name: "AwakeMenuBar",
-            dependencies: [
-                "AwakeUI"
-            ],
-            path: "Sources/AwakeMenuBarApp"
+            path: "Sources/Awake"
         )
     ]
 )
